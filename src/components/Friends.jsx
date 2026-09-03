@@ -1,0 +1,201 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+export default function Friends() {
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+
+  const [contacts, setContacts] = useState([]);
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+
+  const navigate = useNavigate();
+
+  // 1. Fetch Accounts on Mount
+  useEffect(() => {
+    axios.get('http://localhost:3001/api/accounts')
+      .then(res => {
+        if (res.data.success) {
+          setAccounts(res.data.data);
+          if (res.data.data.length > 0) {
+            setSelectedAccountId(res.data.data[0].phoneNumber);
+          }
+        }
+      })
+      .catch(err => console.error('Lỗi tải danh sách tài khoản:', err));
+  }, []);
+
+  // 2. Fetch Contacts when selectedAccountId changes
+  useEffect(() => {
+    if (!selectedAccountId) {
+      setContacts([]);
+      setSelectedContacts(new Set());
+      return;
+    }
+
+    setIsLoadingContacts(true);
+    axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`)
+      .then(res => {
+        if (res.data.success) {
+          setContacts(res.data.data);
+          setSelectedContacts(new Set()); // Reset selection
+        }
+      })
+      .catch(err => console.error('Lỗi tải danh bạ:', err))
+      .finally(() => setIsLoadingContacts(false));
+  }, [selectedAccountId]);
+
+  const handleSelectAll = () => {
+    if (selectedContacts.size === contacts.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(contacts.map(c => c.id)));
+    }
+  };
+
+  const handleToggleContact = (id) => {
+    const newSet = new Set(selectedContacts);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedContacts(newSet);
+  };
+
+  const handleSendToMessaging = () => {
+    if (selectedContacts.size === 0) return alert('Vui lòng chọn ít nhất 1 người!');
+
+    const selectedList = contacts.filter(c => selectedContacts.has(c.id));
+
+    // Lưu vào localStorage
+    const dataToPass = {
+      accountId: selectedAccountId,
+      source: 'friends',
+      contacts: selectedList.map(c => ({ id: c.id, name: c.name }))
+    };
+
+    localStorage.setItem('messagingTarget', JSON.stringify(dataToPass));
+    navigate('/');
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto h-full flex gap-6 relative pb-8 p-6">
+
+      {/* LEFT COLUMN: ACCOUNTS LIST */}
+      <div className="w-[300px] shrink-0 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="font-bold text-gray-800 text-lg flex items-center">
+            <span className="text-blue-500 mr-2">👥</span> Tài khoản Zalo
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">Chọn tài khoản để xem Bạn bè</p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+          {accounts.length === 0 ? (
+            <div className="p-6 text-center text-sm text-gray-500 italic">Chưa có tài khoản nào</div>
+          ) : (
+            accounts.map(acc => (
+              <div
+                key={acc.phoneNumber}
+                onClick={() => setSelectedAccountId(acc.phoneNumber)}
+                className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${selectedAccountId === acc.phoneNumber
+                    ? 'bg-blue-50 border-l-4 border-blue-500'
+                    : 'hover:bg-gray-50 border-l-4 border-transparent'
+                  }`}
+              >
+                <div className="w-10 h-10 rounded-full bg-gray-200 flex flex-shrink-0 items-center justify-center font-bold text-gray-600 overflow-hidden mr-3">
+                  {acc.avatar ? <img src={acc.avatar} className="w-full h-full object-cover" /> : (acc.name ? acc.name.charAt(0) : 'Z')}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{acc.name || acc.phoneNumber}</p>
+                  <p className="text-xs text-gray-500 truncate">{acc.phoneNumber}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* RIGHT COLUMN: CONTACTS TABLE */}
+      <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+        {/* Header & Actions */}
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+          <div>
+            <h2 className="font-bold text-gray-800 text-lg">Danh bạ Bạn bè</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {contacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span>
+            </p>
+          </div>
+
+          <button
+            onClick={handleSendToMessaging}
+            disabled={selectedContacts.size === 0}
+            className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+          >
+            <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
+          </button>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-auto custom-scrollbar">
+          {isLoadingContacts ? (
+            <div className="p-20 flex justify-center text-gray-400">Đang tải danh bạ...</div>
+          ) : !selectedAccountId ? (
+            <div className="p-20 text-center text-gray-500">Vui lòng chọn tài khoản ở cột bên trái</div>
+          ) : contacts.length === 0 ? (
+            <div className="p-20 text-center text-gray-500">
+              Tài khoản này chưa quét được danh bạ nào.<br />
+              Vui lòng qua tab "Tài khoản Zalo", bấm nút Quét để đồng bộ.
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-gray-100 text-gray-600 text-sm sticky top-0 z-10">
+                <tr>
+                  <th className="p-3 w-12 text-center border-b border-gray-200">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
+                      checked={contacts.length > 0 && selectedContacts.size === contacts.length}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold">Tên Zalo</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold">Phân loại</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm text-gray-800">
+                {contacts.map((user) => (
+                  <tr
+                    key={user.id}
+                    onClick={() => handleToggleContact(user.id)}
+                    className={`border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedContacts.has(user.id) ? 'bg-blue-50' : ''}`}
+                  >
+                    <td className="p-3 text-center">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
+                        checked={selectedContacts.has(user.id)}
+                        readOnly
+                      />
+                    </td>
+                    <td className="p-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm bg-gray-200 text-gray-600 overflow-hidden">
+                        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : (user.name || 'Z').charAt(0)}
+                      </div>
+                    </td>
+                    <td className="p-3 font-medium">{user.name}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                        {user.type === 'group' ? 'Nhóm' : 'Bạn bè'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,28 @@
+import { HashRouter as Router, Routes, Route } from 'react-router-dom'
+import Sidebar from './layouts/Sidebar'
+import Messaging from './components/Messaging'
+import Accounts from './components/Accounts'
+import Friends from './components/Friends'
+import ExcelContacts from './components/ExcelContacts'
+import Campaigns from './components/Campaigns'
+
+function App() {
+  return (
+    <Router>
+      <div className="flex h-screen bg-[#F9FAFB] overflow-hidden">
+        <Sidebar />
+        <main className="flex-1 ml-[260px] overflow-hidden relative">
+          <Routes>
+            <Route path="/" element={<Messaging />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/excel-contacts" element={<ExcelContacts />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  )
+}
+
+export default App
