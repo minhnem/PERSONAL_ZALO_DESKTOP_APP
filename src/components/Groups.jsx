@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-export default function Friends() {
+export default function Groups() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
 
-  const [contacts, setContacts] = useState([]);
-  const [selectedContacts, setSelectedContacts] = useState(new Set());
-  const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroups, setSelectedGroups] = useState(new Set());
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
 
   const navigate = useNavigate();
 
@@ -26,51 +26,51 @@ export default function Friends() {
       .catch(err => console.error('Lỗi tải danh sách tài khoản:', err));
   }, []);
 
-  // 2. Fetch Contacts when selectedAccountId changes
+  // 2. Fetch Groups when selectedAccountId changes
   useEffect(() => {
     if (!selectedAccountId) {
-      setContacts([]);
-      setSelectedContacts(new Set());
+      setGroups([]);
+      setSelectedGroups(new Set());
       return;
     }
 
-    setIsLoadingContacts(true);
-    axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`)
+    setIsLoadingGroups(true);
+    axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`)
       .then(res => {
         if (res.data.success) {
-          setContacts(res.data.data);
-          setSelectedContacts(new Set()); // Reset selection
+          setGroups(res.data.data);
+          setSelectedGroups(new Set()); // Reset selection
         }
       })
-      .catch(err => console.error('Lỗi tải danh bạ:', err))
-      .finally(() => setIsLoadingContacts(false));
+      .catch(err => console.error('Lỗi tải danh sách nhóm:', err))
+      .finally(() => setIsLoadingGroups(false));
   }, [selectedAccountId]);
 
   const handleSelectAll = () => {
-    if (selectedContacts.size === contacts.length) {
-      setSelectedContacts(new Set());
+    if (selectedGroups.size === groups.length) {
+      setSelectedGroups(new Set());
     } else {
-      setSelectedContacts(new Set(contacts.map(c => c.id)));
+      setSelectedGroups(new Set(groups.map(g => g._id))); // Use _id or zaloId
     }
   };
 
-  const handleToggleContact = (id) => {
-    const newSet = new Set(selectedContacts);
+  const handleToggleGroup = (id) => {
+    const newSet = new Set(selectedGroups);
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
-    setSelectedContacts(newSet);
+    setSelectedGroups(newSet);
   };
 
   const handleSendToMessaging = () => {
-    if (selectedContacts.size === 0) return alert('Vui lòng chọn ít nhất 1 người!');
+    if (selectedGroups.size === 0) return alert('Vui lòng chọn ít nhất 1 nhóm!');
 
-    const selectedList = contacts.filter(c => selectedContacts.has(c.id));
+    const selectedList = groups.filter(g => selectedGroups.has(g._id));
 
     // Lưu vào localStorage
     const dataToPass = {
       accountId: selectedAccountId,
-      source: 'friends',
-      contacts: selectedList.map(c => ({ id: c.id, name: c.name }))
+      source: 'groups',
+      contacts: selectedList.map(g => ({ id: g.zaloId, name: g.name }))
     };
 
     localStorage.setItem('messagingTarget', JSON.stringify(dataToPass));
@@ -86,7 +86,7 @@ export default function Friends() {
           <h2 className="font-bold text-gray-800 text-lg flex items-center">
             <span className="text-blue-500 mr-2">👥</span> Tài khoản Zalo
           </h2>
-          <p className="text-xs text-gray-500 mt-1">Chọn tài khoản để xem Bạn bè</p>
+          <p className="text-xs text-gray-500 mt-1">Chọn tài khoản để xem Nhóm</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
@@ -115,20 +115,20 @@ export default function Friends() {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: CONTACTS TABLE */}
+      {/* RIGHT COLUMN: GROUPS TABLE */}
       <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
         {/* Header & Actions */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <div>
-            <h2 className="font-bold text-gray-800 text-lg">Danh bạ Bạn bè</h2>
+            <h2 className="font-bold text-gray-800 text-lg">Danh sách Nhóm</h2>
             <p className="text-sm text-gray-600 mt-1">
-              {contacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span>
+              {groups.length} nhóm | Đã chọn: <span className="font-bold text-blue-600">{selectedGroups.size}</span>
             </p>
           </div>
 
           <button
             onClick={handleSendToMessaging}
-            disabled={selectedContacts.size === 0}
+            disabled={selectedGroups.size === 0}
             className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
           >
             <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
@@ -137,14 +137,14 @@ export default function Friends() {
 
         {/* Table */}
         <div className="flex-1 overflow-auto custom-scrollbar">
-          {isLoadingContacts ? (
-            <div className="p-20 flex justify-center text-gray-400">Đang tải danh bạ...</div>
+          {isLoadingGroups ? (
+            <div className="p-20 flex justify-center text-gray-400">Đang tải danh sách nhóm...</div>
           ) : !selectedAccountId ? (
             <div className="p-20 text-center text-gray-500">Vui lòng chọn tài khoản ở cột bên trái</div>
-          ) : contacts.length === 0 ? (
+          ) : groups.length === 0 ? (
             <div className="p-20 text-center text-gray-500">
-              Tài khoản này chưa quét được danh bạ nào.<br />
-              Vui lòng qua tab "Tài khoản Zalo", bấm nút Quét để đồng bộ.
+              Tài khoản này chưa quét được nhóm nào.<br />
+              Vui lòng qua tab "Tài khoản Zalo", bấm nút Quét Nhóm để đồng bộ.
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
@@ -154,41 +154,35 @@ export default function Friends() {
                     <input
                       type="checkbox"
                       className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
-                      checked={contacts.length > 0 && selectedContacts.size === contacts.length}
+                      checked={groups.length > 0 && selectedGroups.size === groups.length}
                       onChange={handleSelectAll}
                     />
                   </th>
                   <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
-                  <th className="p-3 border-b border-gray-200 font-semibold">Tên Zalo</th>
-                  <th className="p-3 border-b border-gray-200 font-semibold">Phân loại</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold">Tên Nhóm</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
-                {contacts.map((user) => (
+                {groups.map((group) => (
                   <tr
-                    key={user.id}
-                    onClick={() => handleToggleContact(user.id)}
-                    className={`border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedContacts.has(user.id) ? 'bg-blue-50' : ''}`}
+                    key={group._id}
+                    onClick={() => handleToggleGroup(group._id)}
+                    className={`border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedGroups.has(group._id) ? 'bg-blue-50' : ''}`}
                   >
                     <td className="p-3 text-center">
                       <input
                         type="checkbox"
                         className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
-                        checked={selectedContacts.has(user.id)}
+                        checked={selectedGroups.has(group._id)}
                         readOnly
                       />
                     </td>
                     <td className="p-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm bg-gray-200 text-gray-600 overflow-hidden">
-                        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : (user.name || 'Z').charAt(0)}
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-200 text-gray-600 overflow-hidden">
+                        {group.avatar ? <img src={group.avatar} className="w-full h-full object-cover" /> : (group.name || 'G').charAt(0)}
                       </div>
                     </td>
-                    <td className="p-3 font-medium">{user.name}</td>
-                    <td className="p-3">
-                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                        {user.type === 'group' ? 'Nhóm' : 'Bạn bè'}
-                      </span>
-                    </td>
+                    <td className="p-3 font-medium text-base">{group.name}</td>
                   </tr>
                 ))}
               </tbody>

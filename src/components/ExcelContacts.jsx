@@ -145,7 +145,7 @@ export default function ExcelContacts() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex flex-col gap-6 relative pb-8 p-6">
+    <div className="h-full flex flex-col gap-6 p-6">
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
         {/* Header & Actions */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">

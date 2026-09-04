@@ -3,6 +3,7 @@ import Sidebar from './layouts/Sidebar'
 import Messaging from './components/Messaging'
 import Accounts from './components/Accounts'
 import Friends from './components/Friends'
+import Groups from './components/Groups'
 import ExcelContacts from './components/ExcelContacts'
 import Campaigns from './components/Campaigns'
 
@@ -16,6 +17,7 @@ function App() {
             <Route path="/" element={<Messaging />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/friends" element={<Friends />} />
+            <Route path="/groups" element={<Groups />} />
             <Route path="/excel-contacts" element={<ExcelContacts />} />
             <Route path="/campaigns" element={<Campaigns />} />
           </Routes>

@@ -99,15 +99,15 @@ const Sidebar = () => {
             </div>
           </li>
 
-          {/* Dropdown 3 */}
-          <li>
-            <button className="w-full flex items-center justify-between px-3 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors">
-              <div className="flex items-center">
-                <MdGroup className="mr-3 text-gray-400" size={20} />
-                Nhóm
-              </div>
-              <IoChevronDownOutline className="text-gray-400" />
-            </button>
+          {/* Menu Nhóm Zalo */}
+          <li
+            className={`flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium ${location.pathname === '/groups' ? 'bg-[#e5f0ff] text-blue-600 border-l-4 border-blue-600' : 'text-gray-700 hover:bg-gray-100 hover:text-blue-600'}`}
+            onClick={() => navigate('/groups')}
+          >
+            <div className="flex items-center">
+              <MdGroup className={`mr-3 ${location.pathname === '/groups' ? 'text-blue-600' : 'text-gray-600'}`} size={20} />
+              Nhóm Zalo
+            </div>
           </li>
 
           {/* Dropdown 4 */}

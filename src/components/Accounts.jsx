@@ -26,6 +26,7 @@ export default function Accounts() {
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isScanningGroups, setIsScanningGroups] = useState(false);
   const [isWebviewLoading, setIsWebviewLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -203,6 +204,26 @@ export default function Accounts() {
     }
   };
 
+  const handleScanGroups = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningGroups(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('Đã quét và đồng bộ nhóm thành công!');
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi lệnh thất bại: ' + err.message);
+    } finally {
+      setIsScanningGroups(false);
+    }
+  };
+
   const handleSyncSession = async () => {
     if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
     try {
@@ -348,10 +369,17 @@ export default function Accounts() {
           <div className="flex space-x-3">
             <button
               onClick={handleScanContacts}
-              disabled={isScanning || !selectedAccountId}
+              disabled={isScanning || isScanningGroups || !selectedAccountId}
               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               {isScanning ? 'Đang quét...' : 'Quét Danh Bạ'}
+            </button>
+            <button
+              onClick={handleScanGroups}
+              disabled={isScanning || isScanningGroups || !selectedAccountId}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
+            >
+              {isScanningGroups ? 'Đang quét...' : 'Quét Nhóm'}
             </button>
             <button
               onClick={handleSyncSession}
@@ -386,8 +414,8 @@ export default function Accounts() {
               const currentAccount = accounts.find(a => a.phoneNumber === selectedAccountId);
               // Kiểm tra xem chiến dịch có đang chạy không (nếu có API trả về cờ này sau này)
               const isWorkerRunning = currentAccount?.isWorkerRunning || false;
-              // Nếu đang quét (isScanning) hoặc worker đang chạy, ta sẽ ngắt kết nối trình duyệt
-              const shouldDisconnect = isScanning || isWorkerRunning;
+              // Nếu đang quét (isScanning/isScanningGroups) hoặc worker đang chạy, ta sẽ ngắt kết nối trình duyệt
+              const shouldDisconnect = isScanning || isScanningGroups || isWorkerRunning;
 
               return (
                 <>
