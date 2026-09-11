@@ -10,6 +10,14 @@ export default function Groups() {
   const [selectedGroups, setSelectedGroups] = useState(new Set());
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
 
+  // States cho Thành viên nhóm
+  const [activeGroup, setActiveGroup] = useState(null);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [selectedMembers, setSelectedMembers] = useState(new Set());
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isScanningMembers, setIsScanningMembers] = useState(false);
+  const [isScanningMembersApi, setIsScanningMembersApi] = useState(false);
+
   const navigate = useNavigate();
 
   // 1. Fetch Accounts on Mount
@@ -71,6 +79,91 @@ export default function Groups() {
       accountId: selectedAccountId,
       source: 'groups',
       contacts: selectedList.map(g => ({ id: g.zaloId, name: g.name }))
+    };
+
+    localStorage.setItem('messagingTarget', JSON.stringify(dataToPass));
+    navigate('/');
+  };
+
+  const fetchGroupMembers = (groupId, groupName, groupZaloId) => {
+    setActiveGroup({ id: groupId, name: groupName, zaloId: groupZaloId });
+    setIsLoadingMembers(true);
+    setGroupMembers([]);
+    setSelectedMembers(new Set());
+    axios.get(`http://localhost:3001/api/groups/${groupId}/members`)
+      .then(res => {
+        if (res.data.success) {
+          setGroupMembers(res.data.data);
+        }
+      })
+      .catch(err => console.error('Lỗi tải danh sách thành viên:', err))
+      .finally(() => setIsLoadingMembers(false));
+  };
+
+  const handleSyncMembers = () => {
+    if (!activeGroup) return;
+    setIsScanningMembers(true);
+    axios.post('http://localhost:3001/api/accounts/sync-group-members', {
+      accountId: selectedAccountId,
+      groupId: activeGroup.id,
+      groupName: activeGroup.name
+    })
+      .then(res => {
+        if (res.data.success) {
+          fetchGroupMembers(activeGroup.id, activeGroup.name, activeGroup.zaloId);
+        }
+      })
+      .catch(err => {
+        alert('Lỗi quét thành viên: ' + (err.response?.data?.error || err.message));
+      })
+      .finally(() => setIsScanningMembers(false));
+  };
+
+  // Quét thành viên bằng zca-js API (nhanh, có UID thật, kể cả ẩn)
+  const handleSyncMembersViaApi = () => {
+    if (!activeGroup) return;
+    setIsScanningMembersApi(true);
+    axios.post('http://localhost:3001/api/accounts/sync-group-members-v2', {
+      accountId: selectedAccountId,
+      groupId: activeGroup.zaloId // Dùng zaloId thật của nhóm
+    })
+      .then(res => {
+        if (res.data.success) {
+          alert(res.data.message);
+          fetchGroupMembers(activeGroup.id, activeGroup.name, activeGroup.zaloId);
+        }
+      })
+      .catch(err => {
+        alert('Lỗi quét API: ' + (err.response?.data?.error || err.message));
+      })
+      .finally(() => setIsScanningMembersApi(false));
+  };
+
+  const handleSelectAllMembers = () => {
+    if (selectedMembers.size === groupMembers.length) {
+      setSelectedMembers(new Set());
+    } else {
+      setSelectedMembers(new Set(groupMembers.map(m => m.id)));
+    }
+  };
+
+  const handleToggleMember = (id) => {
+    const newSet = new Set(selectedMembers);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedMembers(newSet);
+  };
+
+  const handleSendMembersToMessaging = () => {
+    if (selectedMembers.size === 0) return alert('Vui lòng chọn ít nhất 1 người!');
+
+    const selectedList = groupMembers.filter(m => selectedMembers.has(m.id));
+
+    const dataToPass = {
+      accountId: selectedAccountId,
+      source: 'group_members',
+      groupName: activeGroup.name, // Quan trọng để Playwright biết gửi từ nhóm nào
+      contacts: selectedList.map(m => ({ id: m.id, name: m.name }))
     };
 
     localStorage.setItem('messagingTarget', JSON.stringify(dataToPass));
@@ -160,6 +253,7 @@ export default function Groups() {
                   </th>
                   <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
                   <th className="p-3 border-b border-gray-200 font-semibold">Tên Nhóm</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold text-right">Hành động</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
@@ -183,6 +277,17 @@ export default function Groups() {
                       </div>
                     </td>
                     <td className="p-3 font-medium text-base">{group.name}</td>
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // Ngăn click vào row
+                          fetchGroupMembers(group._id, group.name, group.zaloId);
+                        }}
+                        className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        👀 Xem Thành viên
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -190,6 +295,94 @@ export default function Groups() {
           )}
         </div>
       </div>
+
+      {/* MEMBERS MODAL */}
+      {activeGroup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
+          <div className="w-[450px] bg-white h-full shadow-2xl flex flex-col animate-slide-in-right">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <div>
+                <h3 className="font-bold text-gray-800 text-lg">{activeGroup.name}</h3>
+                <p className="text-sm text-gray-500">{groupMembers.length} thành viên | Đã chọn: <span className="font-bold text-blue-600">{selectedMembers.size}</span></p>
+              </div>
+              <button onClick={() => setActiveGroup(null)} className="text-gray-400 hover:text-red-500 transition-colors text-xl font-bold px-2">
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-3 border-b border-gray-100 flex gap-2">
+              <button 
+                onClick={handleSyncMembers}
+                disabled={isScanningMembers || isScanningMembersApi}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
+              >
+                {isScanningMembers ? '⏳ Đang quét...' : '🔄 Quét (Playwright)'}
+              </button>
+              <button 
+                onClick={handleSyncMembersViaApi}
+                disabled={isScanningMembers || isScanningMembersApi}
+                className="flex-1 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
+                title="Quét bằng API: nhanh hơn, có UID thật, kể cả thành viên ẩn"
+              >
+                {isScanningMembersApi ? '⏳ Đang quét...' : '⚡ Quét bằng API'}
+              </button>
+              <button 
+                onClick={handleSendMembersToMessaging}
+                disabled={selectedMembers.size === 0}
+                className="flex-1 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg font-medium text-sm disabled:opacity-50 transition-colors"
+              >
+                ✉️ Nhắn tin
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+              {isLoadingMembers ? (
+                <div className="text-center p-10 text-gray-400">Đang tải...</div>
+              ) : groupMembers.length === 0 ? (
+                <div className="text-center p-10 text-gray-500">
+                  <p>Chưa có dữ liệu thành viên.</p>
+                  <p className="text-sm mt-2">Bấm nút "Quét cập nhật" để lấy danh sách từ Zalo.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center p-2 mb-2 bg-gray-50 rounded-lg">
+                    <input 
+                      type="checkbox"
+                      className="w-4 h-4 mr-3 rounded border-gray-300 text-brand focus:ring-brand"
+                      checked={groupMembers.length > 0 && selectedMembers.size === groupMembers.length}
+                      onChange={handleSelectAllMembers}
+                    />
+                    <span className="text-sm font-medium text-gray-600">Chọn tất cả</span>
+                  </div>
+                  {groupMembers.map(m => (
+                    <div 
+                      key={m.id}
+                      onClick={() => handleToggleMember(m.id)}
+                      className={`flex items-center p-2 rounded-lg cursor-pointer transition-colors ${selectedMembers.has(m.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <input 
+                        type="checkbox"
+                        className="w-4 h-4 mr-3 rounded border-gray-300 text-brand focus:ring-brand"
+                        checked={selectedMembers.has(m.id)}
+                        readOnly
+                      />
+                      <div className="w-8 h-8 rounded-full bg-gray-200 mr-3 flex-shrink-0 flex items-center justify-center text-xs font-bold text-gray-500 overflow-hidden">
+                        {m.avatar ? <img src={m.avatar} className="w-full h-full object-cover" /> : (m.name ? m.name.charAt(0) : '?')}
+                      </div>
+                      <div className="flex-1 min-w-0 truncate">
+                        <span className="text-sm font-medium text-gray-800">{m.name}</span>
+                        {m.id && !m.id.startsWith('zalo_id_mem_') && (
+                          <span className="ml-2 text-xs text-purple-500 font-mono" title={`UID: ${m.id}`}>⚡ UID</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

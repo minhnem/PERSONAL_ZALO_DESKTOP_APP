@@ -27,8 +27,10 @@ export default function Accounts() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isScanningGroups, setIsScanningGroups] = useState(false);
+  const [isScanningGroupsApi, setIsScanningGroupsApi] = useState(false);
   const [isWebviewLoading, setIsWebviewLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [zcaConnecting, setZcaConnecting] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -40,11 +42,13 @@ export default function Accounts() {
   // Refs để giữ giá trị mới nhất mà không gây re-render
   const accountsRef = useRef(accounts);
   const isSyncingRef = useRef(isSyncing);
+  const selectedAccountIdRef = useRef(selectedAccountId);
 
   useEffect(() => {
     accountsRef.current = accounts;
     isSyncingRef.current = isSyncing;
-  }, [accounts, isSyncing]);
+    selectedAccountIdRef.current = selectedAccountId;
+  }, [accounts, isSyncing, selectedAccountId]);
 
   // Lắng nghe sự kiện tải trang của Webview và Auto-sync
   useEffect(() => {
@@ -99,7 +103,7 @@ export default function Accounts() {
       const res = await axios.get('http://localhost:3001/api/accounts');
       if (res.data.success) {
         setAccounts(res.data.data);
-        if (res.data.data.length > 0 && !selectedAccountId) {
+        if (res.data.data.length > 0 && !selectedAccountIdRef.current) {
           setSelectedAccountId(res.data.data[0].phoneNumber);
         }
       }
@@ -108,12 +112,20 @@ export default function Accounts() {
     }
   };
 
-  const handleAddAccount = () => {
+  const handleAddAccount = async () => {
     // Tự động sinh ID thay vì dùng prompt (để tránh lỗi bị chặn trên Electron)
     const newId = 'TK_' + Math.floor(1000 + Math.random() * 9000);
-    const newAccount = { phoneNumber: newId, name: newId, status: 'disconnected' };
-    setAccounts([...accounts, newAccount]);
-    setSelectedAccountId(newId);
+    try {
+      await axios.post('http://localhost:3001/api/accounts', {
+        phoneNumber: newId,
+        name: newId
+      });
+      // Lấy lại danh sách mới nhất từ server và chọn tài khoản mới
+      await fetchAccounts();
+      setSelectedAccountId(newId);
+    } catch (err) {
+      alert('Lỗi tạo tài khoản: ' + err.message);
+    }
   };
 
   const handleDeleteAccount = async (accId, e) => {
@@ -221,6 +233,53 @@ export default function Accounts() {
       alert('Gửi lệnh thất bại: ' + err.message);
     } finally {
       setIsScanningGroups(false);
+    }
+  };
+
+  const handleScanGroupsViaApi = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningGroupsApi(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups-v2', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('Đã quét và đồng bộ nhóm qua API thành công!');
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi lệnh API thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsScanningGroupsApi(false);
+    }
+  };
+
+  // Kết nối zca-js API (extract credentials từ Playwright session)
+  const handleZcaConnect = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    const currentAccount = accounts.find(a => a.phoneNumber === selectedAccountId);
+    if (currentAccount?.status !== 'active') {
+      return alert('Tài khoản chưa đồng bộ session. Vui lòng đăng nhập Zalo và bấm "Đồng bộ lên Server" trước.');
+    }
+    try {
+      setZcaConnecting(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/zca-connect', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('✅ Kết nối API Zalo thành công! Giờ bạn có thể dùng tính năng "Quét bằng API" và "Gửi tin bằng UID".');
+        fetchAccounts();
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      const errorMessage = err.response?.data?.error || err.message;
+      alert('Kết nối API thất bại: ' + errorMessage);
+    } finally {
+      setZcaConnecting(false);
     }
   };
 
@@ -339,7 +398,10 @@ export default function Accounts() {
             >
               <div>
                 <p className="font-medium text-gray-800">{acc.name || acc.phoneNumber}</p>
-                <p className="text-xs text-gray-500 mt-1">{acc.status === 'active' ? '🟢 Đang kết nối' : '⚪ Chưa đồng bộ'}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {acc.status === 'active' ? '🟢 Đang kết nối' : '⚪ Chưa đồng bộ'}
+                  {acc.zcaStatus === 'connected' && <span className="ml-2 text-purple-600 font-medium">⚡ API</span>}
+                </p>
               </div>
               <button
                 onClick={(e) => handleDeleteAccount(acc.phoneNumber, e)}
@@ -376,10 +438,18 @@ export default function Accounts() {
             </button>
             <button
               onClick={handleScanGroups}
-              disabled={isScanning || isScanningGroups || !selectedAccountId}
+              disabled={isScanning || isScanningGroups || isScanningGroupsApi || !selectedAccountId}
               className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
             >
               {isScanningGroups ? 'Đang quét...' : 'Quét Nhóm'}
+            </button>
+            <button
+              onClick={handleScanGroupsViaApi}
+              disabled={isScanning || isScanningGroups || isScanningGroupsApi || !selectedAccountId}
+              className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 transition-colors disabled:opacity-50"
+              title="Quét bằng API: nhanh hơn và có ID thật"
+            >
+              {isScanningGroupsApi ? 'Đang quét API...' : '⚡ Quét Nhóm (API)'}
             </button>
             <button
               onClick={handleSyncSession}
@@ -403,6 +473,14 @@ export default function Accounts() {
             >
               <MdRefresh className="mr-2" size={18} />
               Làm mới Zalo
+            </button>
+            <button
+              onClick={handleZcaConnect}
+              disabled={zcaConnecting || !selectedAccountId}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
+              title="Kết nối zca-js API để quét nhanh & gửi tin bằng UID"
+            >
+              {zcaConnecting ? '⏳ Đang kết nối...' : '⚡ Kết nối API'}
             </button>
           </div>
         </div>

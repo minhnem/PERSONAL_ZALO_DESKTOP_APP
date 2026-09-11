@@ -9,6 +9,7 @@ export default function Friends() {
   const [contacts, setContacts] = useState([]);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+  const [isScanningApi, setIsScanningApi] = useState(false);
 
   const navigate = useNavigate();
 
@@ -77,6 +78,33 @@ export default function Friends() {
     navigate('/');
   };
 
+  // Quét danh bạ bằng zca-js API (nhanh, có UID thật)
+  const handleScanViaApi = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningApi(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-v2', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert(res.data.message);
+        // Refresh danh bạ
+        const contactsRes = await axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`);
+        if (contactsRes.data.success) {
+          setContacts(contactsRes.data.data);
+          setSelectedContacts(new Set());
+        }
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Quét API thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsScanningApi(false);
+    }
+  };
+
   return (
     <div className="h-full flex gap-6 p-6">
 
@@ -126,13 +154,23 @@ export default function Friends() {
             </p>
           </div>
 
-          <button
-            onClick={handleSendToMessaging}
-            disabled={selectedContacts.size === 0}
-            className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
-          >
-            <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleScanViaApi}
+              disabled={isScanningApi}
+              className="px-4 py-2.5 bg-purple-100 text-purple-700 font-medium rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-all flex items-center"
+              title="Quét bằng API: nhanh hơn, có UID thật"
+            >
+              {isScanningApi ? '⏳ Đang quét...' : '⚡ Quét bằng API'}
+            </button>
+            <button
+              onClick={handleSendToMessaging}
+              disabled={selectedContacts.size === 0}
+              className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+            >
+              <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
+            </button>
+          </div>
         </div>
 
         {/* Table */}
@@ -183,7 +221,12 @@ export default function Friends() {
                         {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : (user.name || 'Z').charAt(0)}
                       </div>
                     </td>
-                    <td className="p-3 font-medium">{user.name}</td>
+                    <td className="p-3">
+                      <span className="font-medium">{user.name}</span>
+                      {user.id && !user.id.startsWith('zalo_id_') && (
+                        <span className="ml-2 text-xs text-purple-500 font-mono" title={`UID: ${user.id}`}>⚡ UID</span>
+                      )}
+                    </td>
                     <td className="p-3">
                       <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
                         {user.type === 'group' ? 'Nhóm' : 'Bạn bè'}

@@ -21,6 +21,7 @@ export default function Messaging() {
   
   const [targetData, setTargetData] = useState({ source: null, contacts: [], lockedAccountId: null });
   const [isSending, setIsSending] = useState(false);
+  const [sendMethod, setSendMethod] = useState('api'); // 'api' | 'playwright'
   
   // State cho phần thêm số lạ thủ công
   const [manualPhone, setManualPhone] = useState('');
@@ -69,6 +70,7 @@ export default function Messaging() {
         setTargetData({
           source: parsed.source,
           contacts: parsed.contacts || [],
+          groupName: parsed.groupName, // Thêm groupName
           lockedAccountId: parsed.source === 'friends' ? parsed.accountId : null
         });
         
@@ -142,13 +144,18 @@ export default function Messaging() {
     formData.append('name', campaignName);
     formData.append('messageTemplate', messageText);
     formData.append('recipients', JSON.stringify(targetData.contacts));
+    if (targetData.groupName) {
+      formData.append('groupName', targetData.groupName);
+    }
     
     if (activeAttachment === 'image' && imageFile) {
       formData.append('image', imageFile);
     }
 
+    const endpoint = sendMethod === 'api' ? 'http://localhost:3001/api/campaigns-v2' : 'http://localhost:3001/api/campaigns';
+
     try {
-      const res = await axios.post('http://localhost:3001/api/campaigns', formData, {
+      const res = await axios.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (res.data.success) {
@@ -346,19 +353,38 @@ export default function Messaging() {
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex justify-between items-center shrink-0">
+            <div className="flex justify-between items-center shrink-0 mt-2">
               <span className="text-xs text-gray-400">{messageText.length} ký tự</span>
-              <div className="flex space-x-3">
+              <div className="flex space-x-3 items-center">
                 <button 
                   onClick={() => alert('Đã lưu nội dung nháp!')}
                   className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center"
                 >
                   <IoCheckmarkCircle className="mr-2" size={18} /> Lưu mẫu
                 </button>
+                
+                {/* Toggle Send Method */}
+                <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden bg-white text-sm h-full">
+                  <button
+                    onClick={() => setSendMethod('api')}
+                    className={`px-3 py-2 font-medium transition-colors ${sendMethod === 'api' ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                    title="Gửi siêu tốc bằng API (chỉ dùng UID)"
+                  >
+                    ⚡ API
+                  </button>
+                  <button
+                    onClick={() => setSendMethod('playwright')}
+                    className={`px-3 py-2 font-medium transition-colors border-l border-gray-300 ${sendMethod === 'playwright' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                    title="Gửi chậm như người thật (dùng trình duyệt)"
+                  >
+                    🤖 Auto Web
+                  </button>
+                </div>
+
                 <button 
                   onClick={handleSendCampaign}
                   disabled={isSending || accounts.length === 0 || targetData.contacts.length === 0 || !!activeCampaignId}
-                  className="px-6 py-2 bg-brand border border-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 transition-colors flex items-center shadow-sm disabled:opacity-50"
+                  className="px-6 py-2 bg-brand border border-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 transition-colors flex items-center shadow-sm disabled:opacity-50 h-full"
                 >
                   {isSending ? 'Đang tạo...' : activeCampaignId ? 'Đang theo dõi tiến độ...' : 'Bắt đầu Chiến dịch'}
                 </button>
