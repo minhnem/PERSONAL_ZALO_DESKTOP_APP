@@ -10,6 +10,7 @@ export default function ExcelContacts() {
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [manualPhone, setManualPhone] = useState('');
   const [manualName, setManualName] = useState('');
+  const [autoSelectCount, setAutoSelectCount] = useState(150);
 
   useEffect(() => {
     localStorage.setItem('excelContacts', JSON.stringify(importedContacts));
@@ -30,16 +31,21 @@ export default function ExcelContacts() {
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
         const newContacts = [];
-        // Dòng 1 là Tiêu đề. Cột 1 (index 0) là SĐT, Cột 2 (index 1) là Tên
+        // Dòng 1 là Tiêu đề. Cột 1 (index 0) là SĐT/UID, Cột 2 (index 1) là Tên, Cột 3 (index 2) là Trạng thái (Tùy chọn)
         for (let i = 1; i < data.length; i++) {
           if (data[i][0]) {
             const id = data[i][0].toString().replace(/\s/g, '');
+            // Đọc trạng thái từ cột 3 (nếu có)
+            const statusStr = data[i][2] ? data[i][2].toString().trim() : '';
+            const isSent = statusStr.toLowerCase() === 'đã gửi' || statusStr.toLowerCase() === 'sent';
+
             // Chỉ thêm nếu chưa có trong danh sách
             if (!importedContacts.some(c => c.id === id) && !newContacts.some(c => c.id === id)) {
               newContacts.push({
                 id,
                 name: data[i][1] || data[i][0].toString(),
-                type: 'stranger'
+                type: 'stranger',
+                status: isSent ? 'sent' : 'pending'
               });
             }
           }
@@ -68,13 +74,35 @@ export default function ExcelContacts() {
 
   const handleDownloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Số điện thoại', 'Tên Khách Hàng (Tùy chọn)'],
-      ['0901234567', 'Khách hàng 1'],
-      ['0987654321', 'Khách hàng 2']
+      ['UID / Số điện thoại', 'Tên Khách Hàng (Tùy chọn)', 'Trạng thái (Tùy chọn)'],
+      ['42894723947293847', 'Khách hàng 1', 'Chưa gửi'],
+      ['0987654321', 'Khách hàng 2', 'Đã gửi']
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Danh_Ba_Mau');
     XLSX.writeFile(wb, 'Zalo_DanhBa_Mau.xlsx');
+  };
+
+  const handleExportExcel = () => {
+    if (importedContacts.length === 0) return alert('Danh sách trống!');
+    const wsData = [['UID / Số điện thoại', 'Tên Khách Hàng', 'Trạng thái']];
+    importedContacts.forEach(c => {
+      wsData.push([c.id, c.name, c.status === 'sent' ? 'Đã gửi' : 'Chưa gửi']);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Danh_Sach_So_La');
+    XLSX.writeFile(wb, 'Zalo_DanhBa_Export.xlsx');
+  };
+
+  const handleAutoSelect = () => {
+    const pendingContacts = importedContacts.filter(c => c.status !== 'sent');
+    const toSelect = pendingContacts.slice(0, autoSelectCount);
+    if (toSelect.length === 0) return alert('Không còn số nào chưa gửi trong danh sách!');
+    
+    const newSelected = new Set(selectedContacts);
+    toSelect.forEach(c => newSelected.add(c.id));
+    setSelectedContacts(newSelected);
   };
 
   const handleSelectAll = () => {
@@ -98,7 +126,8 @@ export default function ExcelContacts() {
     const newContact = {
       id,
       name: manualName.trim() || id,
-      type: 'stranger'
+      type: 'stranger',
+      status: 'pending'
     };
 
     if (importedContacts.some(c => c.id === id)) {
@@ -151,7 +180,7 @@ export default function ExcelContacts() {
         <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <div>
             <h2 className="font-bold text-gray-800 text-lg flex items-center">
-              <span className="text-orange-500 mr-2">📊</span> Danh sách Số lạ từ Excel
+              <span className="text-orange-500 mr-2">📊</span> Quản lý dữ liệu Excel
             </h2>
             <p className="text-sm text-gray-600 mt-1">
               {importedContacts.length} liên hệ | Đã chọn: <span className="font-bold text-orange-600">{selectedContacts.size}</span>
@@ -163,10 +192,10 @@ export default function ExcelContacts() {
             <div className="flex items-center space-x-2 bg-white p-1 rounded-lg border border-gray-200">
               <input
                 type="text"
-                placeholder="Số điện thoại"
+                placeholder="UID hoặc Số điện thoại"
                 value={manualPhone}
                 onChange={e => setManualPhone(e.target.value)}
-                className="w-32 px-3 py-1.5 text-sm border-none outline-none focus:ring-0"
+                className="w-40 px-3 py-1.5 text-sm border-none outline-none focus:ring-0"
               />
               <div className="w-px h-5 bg-gray-200"></div>
               <input
@@ -186,11 +215,34 @@ export default function ExcelContacts() {
 
             {/* Hàng 2: Import & Hành động chung */}
             <div className="flex space-x-3 items-center">
+              <div className="flex items-center space-x-1 bg-white border border-gray-300 rounded-lg p-1 mr-2 shadow-sm">
+                <button
+                  onClick={handleAutoSelect}
+                  className="px-3 py-1.5 bg-blue-50 text-blue-600 text-sm font-medium rounded hover:bg-blue-100 transition-colors whitespace-nowrap"
+                >
+                  Tự chọn
+                </button>
+                <input
+                  type="number"
+                  value={autoSelectCount}
+                  onChange={e => setAutoSelectCount(Number(e.target.value))}
+                  className="w-16 px-2 py-1.5 text-sm border-none outline-none focus:ring-0 text-center"
+                  min="1"
+                />
+                <span className="text-sm text-gray-500 pr-2 whitespace-nowrap">chưa gửi</span>
+              </div>
+
               <button
                 onClick={handleClearAll}
-                className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
+                className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors whitespace-nowrap"
               >
                 Xóa tất cả
+              </button>
+              <button
+                onClick={handleExportExcel}
+                className="px-4 py-2 bg-white text-gray-600 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors whitespace-nowrap"
+              >
+                Xuất Excel
               </button>
               <button
                 onClick={handleDownloadTemplate}
@@ -244,7 +296,8 @@ export default function ExcelContacts() {
                   </th>
                   <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
                   <th className="p-3 border-b border-gray-200 font-semibold">Tên Khách Hàng</th>
-                  <th className="p-3 border-b border-gray-200 font-semibold">Số điện thoại</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold">UID / Số điện thoại</th>
+                  <th className="p-3 border-b border-gray-200 font-semibold text-center w-28">Trạng thái</th>
                   <th className="p-3 border-b border-gray-200 w-12 text-center"></th>
                 </tr>
               </thead>
@@ -253,7 +306,7 @@ export default function ExcelContacts() {
                   <tr
                     key={user.id + i}
                     onClick={() => handleToggleContact(user.id)}
-                    className={`border-b border-gray-100 hover:bg-orange-50/50 cursor-pointer transition-colors ${selectedContacts.has(user.id) ? 'bg-orange-50' : ''}`}
+                    className={`border-b border-gray-100 hover:bg-orange-50/50 cursor-pointer transition-colors ${selectedContacts.has(user.id) ? 'bg-orange-50' : ''} ${user.status === 'sent' ? 'opacity-50' : ''}`}
                   >
                     <td className="p-3 text-center">
                       <input
@@ -270,6 +323,13 @@ export default function ExcelContacts() {
                     </td>
                     <td className="p-3 font-medium">{user.name}</td>
                     <td className="p-3 text-orange-600 font-semibold">{user.id}</td>
+                    <td className="p-3 text-center">
+                      {user.status === 'sent' ? (
+                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Đã gửi</span>
+                      ) : (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">Chưa gửi</span>
+                      )}
+                    </td>
                     <td className="p-3 text-center">
                       <button
                         onClick={(e) => handleDeleteContact(user.id, e)}

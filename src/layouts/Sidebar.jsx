@@ -95,7 +95,7 @@ const Sidebar = () => {
           >
             <div className="flex items-center">
               <MdTableChart className={`mr-3 ${location.pathname === '/excel-contacts' ? 'text-blue-600' : 'text-gray-600'}`} size={20} />
-              Số lạ từ Excel
+              Quản lý dữ liệu Excel
             </div>
           </li>
 

@@ -8,16 +8,19 @@ import {
 } from 'react-icons/io5';
 import { MdAutoAwesome, MdPending, MdCheckCircle, MdError } from 'react-icons/md';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 
 export default function Messaging() {
   const [accounts, setAccounts] = useState([]);
-  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [selectedAccountIds, setSelectedAccountIds] = useState([]);
+  const [limitPerAccount, setLimitPerAccount] = useState(30);
   
   const [activeAttachment, setActiveAttachment] = useState('text');
   const [campaignName, setCampaignName] = useState('Chiến dịch Mới');
   const [messageText, setMessageText] = useState('{Chúc|Mong|Thân chúc} sinh nhật {name}! Tuổi mới, chúc {first_name} luôn tràn ngập niềm vui. {Happy birthday|Sinh nhật vui vẻ}!');
   const [imageFile, setImageFile] = useState(null);
   const fileInputRef = React.useRef(null);
+  const excelUploadRef = React.useRef(null);
   
   const [targetData, setTargetData] = useState({ source: null, contacts: [], lockedAccountId: null });
   const [isSending, setIsSending] = useState(false);
@@ -28,27 +31,26 @@ export default function Messaging() {
   const [manualName, setManualName] = useState('');
   
   // State tracking chiến dịch
-  const [activeCampaignId, setActiveCampaignId] = useState(null);
-  const [activeCampaignData, setActiveCampaignData] = useState(null);
+  const [activeCampaignIds, setActiveCampaignIds] = useState([]);
+  const [activeCampaignsData, setActiveCampaignsData] = useState([]);
 
   useEffect(() => {
-    if (!activeCampaignId) return;
+    if (activeCampaignIds.length === 0) return;
     
-    const fetchCampaign = async () => {
+    const fetchCampaigns = async () => {
       try {
-        const res = await axios.get(`http://localhost:3001/api/campaigns/${activeCampaignId}`);
-        if (res.data.success) {
-          setActiveCampaignData(res.data.data);
-        }
+        const promises = activeCampaignIds.map(id => axios.get(`http://localhost:3001/api/campaigns/${id}`));
+        const results = await Promise.all(promises);
+        setActiveCampaignsData(results.map(res => res.data.data));
       } catch (err) {
         console.error('Lỗi tải thông tin chiến dịch:', err);
       }
     };
     
-    fetchCampaign();
-    const interval = setInterval(fetchCampaign, 4000);
+    fetchCampaigns();
+    const interval = setInterval(fetchCampaigns, 4000);
     return () => clearInterval(interval);
-  }, [activeCampaignId]);
+  }, [activeCampaignIds]);
   
   // 1. Fetch Accounts on Mount
   useEffect(() => {
@@ -76,13 +78,73 @@ export default function Messaging() {
         
         // Auto-select account if provided
         if (parsed.accountId) {
-          setSelectedAccountId(parsed.accountId);
+          setSelectedAccountIds([parsed.accountId]);
         }
       } catch (e) {
         console.error('Lỗi đọc localStorage:', e);
       }
     }
   }, []);
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        const newContacts = [];
+        for (let i = 1; i < data.length; i++) {
+          if (data[i][0]) {
+            const id = data[i][0].toString().replace(/\s/g, '');
+            if (!targetData.contacts.some(c => c.id === id) && !newContacts.some(c => c.id === id)) {
+              newContacts.push({
+                id,
+                name: data[i][1] || data[i][0].toString(),
+                type: 'excel'
+              });
+            }
+          }
+        }
+
+        if (newContacts.length > 0) {
+          setTargetData(prev => {
+            const newData = {
+              ...prev,
+              source: prev.source || 'excel',
+              contacts: [...newContacts, ...prev.contacts]
+            };
+            localStorage.setItem('messagingTarget', JSON.stringify(newData));
+            return newData;
+          });
+          alert(`🎉 Đã tải lên thành công ${newContacts.length} người nhận từ file Excel!`);
+        } else {
+          alert('Không tìm thấy dữ liệu hợp lệ hoặc tất cả đã có trong danh sách.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Lỗi khi đọc file Excel! Đảm bảo định dạng chuẩn (Cột 1: SĐT/UID, Cột 2: Tên).');
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (excelUploadRef.current) excelUploadRef.current.value = '';
+  };
+
+  const handleDownloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['UID / Số điện thoại', 'Tên Khách Hàng (Tùy chọn)', 'Trạng thái (Tùy chọn)'],
+      ['42894723947293847', 'Khách hàng 1', 'Chưa gửi'],
+      ['0987654321', 'Khách hàng 2', 'Đã gửi']
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Danh_Ba_Mau');
+    XLSX.writeFile(wb, 'Zalo_DanhBa_Mau.xlsx');
+  };
 
   const handleRemoveContact = (idToRemove) => {
     setTargetData(prev => {
@@ -130,17 +192,26 @@ export default function Messaging() {
   };
 
   const handleSendCampaign = async () => {
-    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản gửi tin!');
+    if (selectedAccountIds.length === 0) return alert('Vui lòng chọn ít nhất 1 tài khoản gửi tin!');
     if (targetData.contacts.length === 0) return alert('Danh sách nhận tin đang trống!');
     if (!messageText.trim()) return alert('Vui lòng nhập nội dung tin nhắn!');
 
-    const confirm = window.confirm(`Bạn chuẩn bị tạo chiến dịch gửi cho ${targetData.contacts.length} người. Bạn có chắc chắn không?`);
+    const totalCapacity = selectedAccountIds.length * limitPerAccount;
+    const toSendCount = Math.min(targetData.contacts.length, totalCapacity);
+    
+    let confirmMsg = `Bạn chuẩn bị tạo chiến dịch gửi cho ${toSendCount} người bằng ${selectedAccountIds.length} tài khoản.`;
+    if (targetData.contacts.length > totalCapacity) {
+      confirmMsg += `\n\nLưu ý: ${targetData.contacts.length - totalCapacity} người cuối danh sách sẽ bị bỏ lại vì vượt quá giới hạn (Giới hạn: ${limitPerAccount} tin/tài khoản).`;
+    }
+    
+    const confirm = window.confirm(confirmMsg + '\n\nBạn có chắc chắn không?');
     if (!confirm) return;
 
     setIsSending(true);
     
     const formData = new FormData();
-    formData.append('accountId', selectedAccountId);
+    formData.append('accountIds', JSON.stringify(selectedAccountIds));
+    formData.append('limitPerAccount', limitPerAccount);
     formData.append('name', campaignName);
     formData.append('messageTemplate', messageText);
     formData.append('recipients', JSON.stringify(targetData.contacts));
@@ -160,8 +231,15 @@ export default function Messaging() {
       });
       if (res.data.success) {
         alert('🎉 ' + res.data.message);
-        // Đã gỡ bỏ setImageFile(null) để giữ nguyên ảnh trên giao diện Tracking
-        setActiveCampaignId(res.data.campaignId); // Chuyển sang Tracking Mode
+        setActiveCampaignIds(res.data.campaignIds || [res.data.campaignId]);
+        
+        // Update excelContacts status in local storage
+        if (targetData.source === 'excel') {
+           const excelContacts = JSON.parse(localStorage.getItem('excelContacts') || '[]');
+           const sentIds = res.data.processedContactIds || targetData.contacts.slice(0, toSendCount).map(c => c.id);
+           const updated = excelContacts.map(c => sentIds.includes(c.id) ? { ...c, status: 'sent' } : c);
+           localStorage.setItem('excelContacts', JSON.stringify(updated));
+        }
       } else {
         alert('Lỗi: ' + res.data.error);
       }
@@ -194,28 +272,46 @@ export default function Messaging() {
     <div className="w-full h-full flex flex-col gap-6 relative pb-8 p-6">
       
       {/* 🟢 TOP BAR: ACCOUNT SELECTOR */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col space-y-3">
+        <div className="flex items-center justify-between">
           <label className="font-semibold text-gray-700 flex items-center">
-            <span className="text-blue-500 mr-2">👤</span> Chọn Tài khoản Gửi:
+            <span className="text-blue-500 mr-2">👤</span> Chọn Tài khoản Gửi (Có thể chọn nhiều):
           </label>
-          <select 
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            disabled={!!targetData.lockedAccountId}
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-brand min-w-[250px] bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <option value="" disabled>-- Vui lòng chọn tài khoản --</option>
-            {accounts.map(acc => (
-              <option key={acc.phoneNumber} value={acc.phoneNumber}>
-                {acc.name || acc.phoneNumber} {acc.status === 'active' ? '(Đang kết nối)' : '(Mất kết nối)'}
-              </option>
-            ))}
-          </select>
-          {targetData.lockedAccountId && (
-            <span className="text-xs text-orange-500 italic">*Tài khoản bị khóa vì bạn đang gửi cho Bạn bè của tài khoản này.</span>
-          )}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700">Giới hạn tin / tài khoản:</span>
+            <input 
+              type="number" 
+              value={limitPerAccount}
+              onChange={e => setLimitPerAccount(Number(e.target.value))}
+              className="w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-brand text-center"
+              min="1"
+            />
+          </div>
         </div>
+        
+        <div className="flex flex-wrap gap-3">
+          {accounts.map(acc => (
+            <label key={acc.phoneNumber} className={`flex items-center space-x-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${selectedAccountIds.includes(acc.phoneNumber) ? 'border-brand bg-brand/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+              <input 
+                type="checkbox"
+                className="w-4 h-4 text-brand rounded border-gray-300 focus:ring-brand"
+                checked={selectedAccountIds.includes(acc.phoneNumber)}
+                onChange={(e) => {
+                  if (e.target.checked) setSelectedAccountIds([...selectedAccountIds, acc.phoneNumber]);
+                  else setSelectedAccountIds(selectedAccountIds.filter(id => id !== acc.phoneNumber));
+                }}
+                disabled={!!targetData.lockedAccountId && targetData.lockedAccountId !== acc.phoneNumber}
+              />
+              <span className="text-sm font-medium text-gray-700">{acc.name || acc.phoneNumber}</span>
+              <span className={`text-xs ${acc.status === 'active' ? 'text-green-600' : 'text-red-500'}`}>
+                {acc.status === 'active' ? '(Sẵn sàng)' : '(Mất kết nối)'}
+              </span>
+            </label>
+          ))}
+        </div>
+        {targetData.lockedAccountId && (
+          <span className="text-xs text-orange-500 italic">*Chỉ được chọn 1 tài khoản vì bạn đang gửi cho Bạn bè nội bộ của tài khoản này.</span>
+        )}
         
         {accounts.length === 0 && (
           <span className="text-red-500 text-sm italic">Bạn chưa có tài khoản nào. Vui lòng qua tab Quản lý Tài khoản để thêm.</span>
@@ -383,10 +479,10 @@ export default function Messaging() {
 
                 <button 
                   onClick={handleSendCampaign}
-                  disabled={isSending || accounts.length === 0 || targetData.contacts.length === 0 || !!activeCampaignId}
+                  disabled={isSending || accounts.length === 0 || targetData.contacts.length === 0 || activeCampaignIds.length > 0}
                   className="px-6 py-2 bg-brand border border-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 transition-colors flex items-center shadow-sm disabled:opacity-50 h-full"
                 >
-                  {isSending ? 'Đang tạo...' : activeCampaignId ? 'Đang theo dõi tiến độ...' : 'Bắt đầu Chiến dịch'}
+                  {isSending ? 'Đang tạo...' : activeCampaignIds.length > 0 ? 'Đang theo dõi...' : 'Bắt đầu Chiến dịch'}
                 </button>
               </div>
             </div>
@@ -395,20 +491,20 @@ export default function Messaging() {
 
         {/* 🟢 RIGHT COLUMN: RECIPIENTS TARGET OR TRACKING */}
         <div className="w-full lg:w-5/12 flex flex-col gap-5 h-full">
-          {activeCampaignId ? (
+          {activeCampaignIds.length > 0 ? (
             <div className="bg-white rounded-xl border-2 border-blue-200 shadow-sm p-5 flex-1 flex flex-col h-full overflow-hidden">
               <div className="flex justify-between items-center mb-4 shrink-0 border-b border-gray-100 pb-4">
                 <div>
                   <h3 className="font-semibold text-gray-800 flex items-center text-lg">
                     <span className="text-blue-500 mr-2">📡</span>
-                    Tiến độ Chiến dịch
+                    Tiến độ {activeCampaignIds.length} Chiến dịch
                   </h3>
                   <div className="text-xs text-gray-500 mt-1">Đang theo dõi trực tiếp quá trình gửi</div>
                 </div>
                 <button 
                   onClick={() => {
-                    setActiveCampaignId(null);
-                    setActiveCampaignData(null);
+                    setActiveCampaignIds([]);
+                    setActiveCampaignsData([]);
                     setTargetData({ source: null, contacts: [], lockedAccountId: null });
                     localStorage.removeItem('messagingTarget');
                     
@@ -417,54 +513,41 @@ export default function Messaging() {
                     setCampaignName('Chiến dịch Mới');
                     setActiveAttachment('text');
                   }}
-                  className="px-3 py-1.5 border border-brand bg-brand/5 text-brand rounded-lg text-sm font-medium hover:bg-brand/10 transition-colors"
+                  className="px-3 py-1.5 border border-brand bg-brand/5 text-brand rounded-lg text-sm font-medium hover:bg-brand/10 transition-colors shrink-0 whitespace-nowrap"
                 >
-                  + Tạo chiến dịch mới
+                  + Tạo mới
                 </button>
               </div>
 
-              {!activeCampaignData ? (
+              {activeCampaignsData.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               ) : (
-                <>
-                  <div className="mb-4 bg-gray-50 p-4 rounded-lg shrink-0">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">Trạng thái: 
-                        <span className="font-semibold ml-1 text-blue-600">{activeCampaignData.status === 'completed' ? 'Hoàn tất' : 'Đang chạy'}</span>
-                      </span>
-                      <span className="font-semibold text-gray-800">
-                        {activeCampaignData.stats?.sent + activeCampaignData.stats?.failed || 0} / {activeCampaignData.stats?.total || 0}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 flex overflow-hidden">
-                      <div className="bg-green-500 h-2.5 transition-all duration-500" style={{ width: `${((activeCampaignData.stats?.sent || 0) / (activeCampaignData.stats?.total || 1)) * 100}%` }}></div>
-                      <div className="bg-red-500 h-2.5 transition-all duration-500" style={{ width: `${((activeCampaignData.stats?.failed || 0) / (activeCampaignData.stats?.total || 1)) * 100}%` }}></div>
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs">
-                       <span className="text-green-600 font-medium">Thành công: {activeCampaignData.stats?.sent || 0}</span>
-                       <span className="text-red-500 font-medium">Lỗi: {activeCampaignData.stats?.failed || 0}</span>
-                       <span className="text-blue-500 font-medium">Đang chờ: {activeCampaignData.stats?.pending || 0}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg p-2 space-y-2 custom-scrollbar">
-                    {activeCampaignData.recipients.map((r, i) => (
-                      <div key={r.contactId + i} className="flex flex-col p-3 rounded-lg border border-gray-100 bg-white shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{r.contactId}</p>
-                          <div className="shrink-0 ml-3">
-                             {r.status === 'sent' && <span className="flex items-center text-green-600 text-xs font-medium"><MdCheckCircle className="mr-1" size={16}/> Thành công</span>}
-                             {r.status === 'failed' && <span className="flex items-center text-red-500 text-xs font-medium"><MdError className="mr-1" size={16}/> Lỗi</span>}
-                             {r.status === 'pending' && <span className="flex items-center text-blue-500 text-xs font-medium"><MdPending className="mr-1 animate-pulse" size={16}/> Đang chờ</span>}
-                          </div>
-                        </div>
-                        {r.errorMessage && <p className="text-xs text-red-500 mt-1">{r.errorMessage}</p>}
+                <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-1">
+                  {activeCampaignsData.map((campaignData) => (
+                    <div key={campaignData._id} className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                      <div className="font-bold text-gray-800 text-sm mb-2 truncate" title={campaignData.name}>{campaignData.name}</div>
+                      <div className="flex justify-between text-xs mb-2">
+                        <span className="text-gray-600">
+                          <span className="font-semibold text-blue-600">{campaignData.status === 'completed' ? 'Hoàn tất' : 'Đang chạy'}</span>
+                        </span>
+                        <span className="font-semibold text-gray-800">
+                          {campaignData.stats?.sent + campaignData.stats?.failed || 0} / {campaignData.stats?.total || 0}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </>
+                      <div className="w-full bg-gray-200 rounded-full h-2 flex overflow-hidden mb-2">
+                        <div className="bg-green-500 h-2 transition-all duration-500" style={{ width: `${((campaignData.stats?.sent || 0) / (campaignData.stats?.total || 1)) * 100}%` }}></div>
+                        <div className="bg-red-500 h-2 transition-all duration-500" style={{ width: `${((campaignData.stats?.failed || 0) / (campaignData.stats?.total || 1)) * 100}%` }}></div>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                         <span className="text-green-600 font-medium">TC: {campaignData.stats?.sent || 0}</span>
+                         <span className="text-red-500 font-medium">Lỗi: {campaignData.stats?.failed || 0}</span>
+                         <span className="text-blue-500 font-medium">Chờ: {campaignData.stats?.pending || 0}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ) : (
@@ -490,13 +573,37 @@ export default function Messaging() {
               )}
             </div>
 
-            {/* Thêm số lạ thủ công */}
+            {/* Thêm người nhận thủ công / Excel */}
             <div className="mb-4 shrink-0 bg-gray-50 p-3 rounded-lg border border-gray-200">
-              <label className="block text-xs font-semibold text-gray-700 mb-2">Thêm số điện thoại lạ nhanh:</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-xs font-semibold text-gray-700">Thêm người nhận (SĐT/UID):</label>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={handleDownloadTemplate} 
+                    className="text-xs text-gray-600 font-medium hover:underline flex items-center bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors"
+                    title="Tải file Excel mẫu"
+                  >
+                    Tải mẫu
+                  </button>
+                  <button 
+                    onClick={() => excelUploadRef.current?.click()} 
+                    className="text-xs text-brand font-medium hover:underline flex items-center bg-brand/5 hover:bg-brand/10 px-2 py-1 rounded transition-colors"
+                  >
+                    <IoDocumentTextOutline className="mr-1" /> Nhập Excel
+                  </button>
+                  <input
+                    type="file"
+                    ref={excelUploadRef}
+                    className="hidden"
+                    accept=".xlsx, .xls"
+                    onChange={handleImportExcel}
+                  />
+                </div>
+              </div>
               <div className="flex space-x-2">
                 <input
                   type="text"
-                  placeholder="Số điện thoại"
+                  placeholder="UID hoặc SĐT"
                   value={manualPhone}
                   onChange={e => setManualPhone(e.target.value)}
                   className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-brand"
@@ -523,7 +630,7 @@ export default function Messaging() {
                 <div className="p-10 text-center text-sm text-gray-500 flex flex-col items-center">
                   <span className="text-4xl mb-4 text-gray-300">🤷‍♂️</span>
                   Chưa có danh sách nhận tin.<br/><br/>
-                  Vui lòng qua tab <span className="font-semibold">Bạn bè Zalo</span> hoặc <span className="font-semibold">Số lạ từ Excel</span> để chọn đối tượng trước!
+                  Vui lòng qua tab <span className="font-semibold">Bạn bè Zalo</span> hoặc <span className="font-semibold">Quản lý dữ liệu Excel</span> để chọn đối tượng trước!
                 </div>
               ) : (
                 targetData.contacts.map((user, i) => (
