@@ -6,8 +6,10 @@ import {
   MdRefresh,
   MdCheckCircle,
   MdError,
-  MdPending
+  MdPending,
+  MdDownload
 } from 'react-icons/md';
+import * as XLSX from 'xlsx';
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
@@ -75,6 +77,25 @@ export default function Campaigns() {
   const formatDate = (dateString) => {
     const d = new Date(dateString);
     return d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const handleExportExcel = () => {
+    if (!selectedCampaign || !selectedCampaign.recipients) return;
+    
+    const excelData = selectedCampaign.recipients.map((r, index) => ({
+      'STT': index + 1,
+      'Zalo ID': r.contactId || '',
+      'Tên người nhận': r.name || 'Không rõ tên',
+      'Trạng thái': r.status === 'sent' ? 'Thành công' : r.status === 'failed' ? 'Lỗi' : 'Đang chờ',
+      'Ghi chú (Lỗi)': r.errorMessage || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ChiTietChienDich");
+    
+    const fileName = `BaoCao_${selectedCampaign.name.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const renderProgressBar = (stats) => {
@@ -234,7 +255,7 @@ export default function Campaigns() {
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-100">
                           <th className="py-3 px-4 font-semibold text-gray-600 w-16 text-center">STT</th>
-                          <th className="py-3 px-4 font-semibold text-gray-600">Số Điện Thoại / Zalo ID</th>
+                          <th className="py-3 px-4 font-semibold text-gray-600">Tên / Zalo ID</th>
                           <th className="py-3 px-4 font-semibold text-gray-600">Trạng thái</th>
                           <th className="py-3 px-4 font-semibold text-gray-600">Ghi chú</th>
                         </tr>
@@ -243,7 +264,10 @@ export default function Campaigns() {
                         {selectedCampaign.recipients.map((r, index) => (
                           <tr key={r._id || index} className="hover:bg-gray-50">
                             <td className="py-3 px-4 text-center text-gray-400">{index + 1}</td>
-                            <td className="py-3 px-4 font-medium text-gray-700">{r.contactId}</td>
+                            <td className="py-3 px-4 font-medium text-gray-700">
+                              <div>{r.name || 'Không rõ tên'}</div>
+                              <div className="text-xs text-gray-400 font-normal">{r.contactId}</div>
+                            </td>
                             <td className="py-3 px-4">
                               {r.status === 'sent' && (
                                 <span className="flex items-center text-green-600 text-xs font-medium">
@@ -275,7 +299,15 @@ export default function Campaigns() {
               )}
             </div>
             
-            <div className="px-6 py-4 border-t border-gray-200 bg-white flex justify-end">
+            <div className="px-6 py-4 border-t border-gray-200 bg-white flex justify-end space-x-3">
+              <button 
+                onClick={handleExportExcel}
+                disabled={!selectedCampaign || detailsLoading}
+                className="px-4 py-2 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 font-medium rounded-lg transition-colors flex items-center disabled:opacity-50"
+              >
+                <MdDownload className="mr-2" size={18} />
+                Xuất Excel
+              </button>
               <button 
                 onClick={() => setIsModalOpen(false)}
                 className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"

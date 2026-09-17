@@ -26,6 +26,9 @@ export default function Messaging() {
   const [isSending, setIsSending] = useState(false);
   const [sendMethod, setSendMethod] = useState('api'); // 'api' | 'playwright'
   
+  const [isFriendRequest, setIsFriendRequest] = useState(false);
+  const [friendRequestMessage, setFriendRequestMessage] = useState('');
+  
   // State cho phần thêm số lạ thủ công
   const [manualPhone, setManualPhone] = useState('');
   const [manualName, setManualName] = useState('');
@@ -195,6 +198,8 @@ export default function Messaging() {
     if (selectedAccountIds.length === 0) return alert('Vui lòng chọn ít nhất 1 tài khoản gửi tin!');
     if (targetData.contacts.length === 0) return alert('Danh sách nhận tin đang trống!');
     if (!messageText.trim()) return alert('Vui lòng nhập nội dung tin nhắn!');
+    if (isFriendRequest && !friendRequestMessage.trim()) return alert('Vui lòng nhập nội dung lời mời kết bạn!');
+    if (isFriendRequest && friendRequestMessage.length > 150) return alert('Lời mời kết bạn không được vượt quá 150 ký tự!');
 
     const totalCapacity = selectedAccountIds.length * limitPerAccount;
     const toSendCount = Math.min(targetData.contacts.length, totalCapacity);
@@ -219,9 +224,17 @@ export default function Messaging() {
       formData.append('groupName', targetData.groupName);
     }
     
+    if (isFriendRequest) {
+      formData.append('isFriendRequest', 'true');
+      formData.append('friendRequestMessage', friendRequestMessage);
+    }
+    
     if (activeAttachment === 'image' && imageFile) {
       formData.append('image', imageFile);
     }
+    
+    // Báo cho backend biết nếu đây là gửi vào Group
+    formData.append('isGroupTarget', targetData.source === 'groups' ? 'true' : 'false');
 
     const endpoint = sendMethod === 'api' ? 'http://localhost:3001/api/campaigns-v2' : 'http://localhost:3001/api/campaigns';
 
@@ -318,9 +331,9 @@ export default function Messaging() {
         )}
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 flex-1 h-[calc(100%-80px)]">
+      <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         {/* 🟢 LEFT COLUMN: COMPOSE MESSAGE */}
-        <div className="w-full lg:w-7/12 flex flex-col gap-5 h-full overflow-y-auto pr-2 custom-scrollbar">
+        <div className="w-full lg:w-7/12 flex flex-col gap-5 h-full overflow-y-auto pr-2 custom-scrollbar pb-32">
           {/* Batch Name */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 shrink-0">
             <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
@@ -411,7 +424,7 @@ export default function Messaging() {
           </div>
 
           {/* Message Content */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex-1 flex flex-col min-h-[400px]">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col min-h-[400px]">
             <div className="flex justify-between items-center mb-3">
               <label className="flex items-center text-sm font-semibold text-gray-700">
                 <span className="text-orange-500 mr-2">✍️</span> Nội dung tin nhắn
@@ -425,10 +438,13 @@ export default function Messaging() {
 
             <textarea 
               id="message-textarea"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors resize-none flex-1 mb-4"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors resize-none flex-1 min-h-[200px]"
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
             />
+            <div className="text-right text-xs text-gray-400 mt-1 mb-3">
+              {messageText.length} ký tự
+            </div>
 
             {/* Shortcodes */}
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 mb-4 shrink-0">
@@ -448,9 +464,42 @@ export default function Messaging() {
               </div>
             </div>
 
+            {/* Friend Request Feature */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4 shrink-0 transition-all">
+              <label className="flex items-center space-x-2 cursor-pointer mb-2">
+                <input 
+                  type="checkbox" 
+                  checked={isFriendRequest}
+                  onChange={(e) => setIsFriendRequest(e.target.checked)}
+                  className="w-4 h-4 text-brand rounded border-gray-300 focus:ring-brand"
+                />
+                <span className="text-sm font-semibold text-blue-800">🤝 Gửi kèm yêu cầu kết bạn (API Zalo)</span>
+              </label>
+              
+              {isFriendRequest && (
+                <div className="mt-3 pl-6">
+                  {(activeAttachment === 'image' || activeAttachment === 'video') && (
+                    <div className="mb-2 text-xs text-orange-600 flex items-start bg-orange-50 p-2 rounded border border-orange-200">
+                      <MdError className="mr-1 mt-0.5 shrink-0" size={14} />
+                      Tính năng kết bạn chỉ hỗ trợ gửi văn bản. Ảnh/Video sẽ được đính kèm vào tin nhắn inbox thường.
+                    </div>
+                  )}
+                  <textarea
+                    placeholder="Nhập lời chào kết bạn (Tối đa 150 ký tự). Ví dụ: Chào bạn, mình biết bạn qua..."
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors resize-none"
+                    rows="2"
+                    value={friendRequestMessage}
+                    onChange={(e) => setFriendRequestMessage(e.target.value.substring(0, 150))}
+                  />
+                  <div className="text-right text-xs text-blue-500 mt-1">
+                    {friendRequestMessage.length}/150
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Bottom Actions */}
-            <div className="flex justify-between items-center shrink-0 mt-2">
-              <span className="text-xs text-gray-400">{messageText.length} ký tự</span>
+            <div className="flex justify-end items-center shrink-0 mt-2">
               <div className="flex space-x-3 items-center">
                 <button 
                   onClick={() => alert('Đã lưu nội dung nháp!')}
