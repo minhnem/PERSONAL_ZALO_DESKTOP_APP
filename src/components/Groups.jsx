@@ -9,6 +9,8 @@ export default function Groups() {
   const [groups, setGroups] = useState([]);
   const [selectedGroups, setSelectedGroups] = useState(new Set());
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const [isScanningGroups, setIsScanningGroups] = useState(false);
+  const [isScanningGroupsApi, setIsScanningGroupsApi] = useState(false);
 
   // States cho Thành viên nhóm
   const [activeGroup, setActiveGroup] = useState(null);
@@ -83,6 +85,52 @@ export default function Groups() {
 
     localStorage.setItem('messagingTarget', JSON.stringify(dataToPass));
     navigate('/');
+  };
+
+  const handleScanGroups = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningGroups(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('Đã quét và đồng bộ nhóm thành công!');
+        // Refresh groups
+        const groupsRes = await axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`);
+        if (groupsRes.data.success) setGroups(groupsRes.data.data);
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi lệnh thất bại: ' + err.message);
+    } finally {
+      setIsScanningGroups(false);
+    }
+  };
+
+  const handleScanGroupsViaApi = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningGroupsApi(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups-v2', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('Đã quét và đồng bộ nhóm qua API thành công!');
+        // Refresh groups
+        const groupsRes = await axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`);
+        if (groupsRes.data.success) setGroups(groupsRes.data.data);
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi lệnh API thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsScanningGroupsApi(false);
+    }
   };
 
   const fetchGroupMembers = (groupId, groupName, groupZaloId) => {
@@ -219,13 +267,30 @@ export default function Groups() {
             </p>
           </div>
 
-          <button
-            onClick={handleSendToMessaging}
-            disabled={selectedGroups.size === 0}
-            className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
-          >
-            <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
-          </button>
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={handleScanGroups}
+              disabled={isScanningGroups || isScanningGroupsApi}
+              className="px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-all flex items-center"
+            >
+              {isScanningGroups ? '⏳ Đang quét...' : '🤖 Quét Nhóm'}
+            </button>
+            <button
+              onClick={handleScanGroupsViaApi}
+              disabled={isScanningGroups || isScanningGroupsApi}
+              className="px-4 py-2.5 bg-purple-100 text-purple-700 font-medium rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-all flex items-center"
+              title="Quét bằng API: nhanh hơn và có ID thật"
+            >
+              {isScanningGroupsApi ? '⏳ Đang quét API...' : '⚡ Quét Nhóm API'}
+            </button>
+            <button
+              onClick={handleSendToMessaging}
+              disabled={selectedGroups.size === 0}
+              className="px-6 py-2.5 bg-brand text-white font-medium rounded-lg shadow-sm hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+            >
+              <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
+            </button>
+          </div>
         </div>
 
         {/* Table */}

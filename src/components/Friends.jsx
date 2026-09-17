@@ -9,9 +9,17 @@ export default function Friends() {
   const [contacts, setContacts] = useState([]);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+  const [isScanningContacts, setIsScanningContacts] = useState(false);
   const [isScanningApi, setIsScanningApi] = useState(false);
+  const [selectedTagFilter, setSelectedTagFilter] = useState('');
 
   const navigate = useNavigate();
+
+  const availableTags = [...new Set(contacts.flatMap(c => c.tags || []))].filter(Boolean);
+  const filteredContacts = contacts.filter(c => {
+    if (!selectedTagFilter) return true;
+    return c.tags && c.tags.includes(selectedTagFilter);
+  });
 
   // 1. Fetch Accounts on Mount
   useEffect(() => {
@@ -41,6 +49,7 @@ export default function Friends() {
         if (res.data.success) {
           setContacts(res.data.data);
           setSelectedContacts(new Set()); // Reset selection
+          setSelectedTagFilter('');
         }
       })
       .catch(err => console.error('Lỗi tải danh bạ:', err))
@@ -48,10 +57,13 @@ export default function Friends() {
   }, [selectedAccountId]);
 
   const handleSelectAll = () => {
-    if (selectedContacts.size === contacts.length) {
+    const currentFilteredIds = filteredContacts.map(c => c.id);
+    const allSelected = currentFilteredIds.length > 0 && currentFilteredIds.every(id => selectedContacts.has(id));
+    
+    if (allSelected) {
       setSelectedContacts(new Set());
     } else {
-      setSelectedContacts(new Set(contacts.map(c => c.id)));
+      setSelectedContacts(new Set(currentFilteredIds));
     }
   };
 
@@ -78,6 +90,33 @@ export default function Friends() {
     navigate('/');
   };
 
+  const handleScanContacts = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    try {
+      setIsScanningContacts(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync', {
+        accountId: selectedAccountId
+      });
+      if (res.data.success) {
+        alert('Đã quét và đồng bộ danh bạ thành công!');
+        // Refresh danh bạ
+        const contactsRes = await axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`);
+        if (contactsRes.data.success) {
+          setContacts(contactsRes.data.data);
+          setSelectedContacts(new Set());
+          setSelectedTagFilter('');
+        }
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi lệnh thất bại: ' + err.message);
+    } finally {
+      setIsScanningContacts(false);
+    }
+  };
+
   // Quét danh bạ bằng zca-js API (nhanh, có UID thật)
   const handleScanViaApi = async () => {
     if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
@@ -93,6 +132,7 @@ export default function Friends() {
         if (contactsRes.data.success) {
           setContacts(contactsRes.data.data);
           setSelectedContacts(new Set());
+          setSelectedTagFilter('');
         }
       } else {
         alert('Lỗi: ' + res.data.error);
@@ -150,11 +190,34 @@ export default function Friends() {
           <div>
             <h2 className="font-bold text-gray-800 text-lg">Danh bạ Bạn bè</h2>
             <p className="text-sm text-gray-600 mt-1">
-              {contacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span>
+              {filteredContacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span>
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            {availableTags.length > 0 && (
+              <select
+                value={selectedTagFilter}
+                onChange={(e) => {
+                  setSelectedTagFilter(e.target.value);
+                  setSelectedContacts(new Set());
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value="">Tất cả phân loại</option>
+                {availableTags.map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={handleScanContacts}
+              disabled={isScanningContacts || isScanningApi}
+              className="px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-all flex items-center"
+              title="Quét danh bạ bằng Trình duyệt (Playwright)"
+            >
+              {isScanningContacts ? '⏳ Đang quét...' : '🤖 Quét Danh bạ'}
+            </button>
             <button
               onClick={handleScanViaApi}
               disabled={isScanningApi}
@@ -192,7 +255,7 @@ export default function Friends() {
                     <input
                       type="checkbox"
                       className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
-                      checked={contacts.length > 0 && selectedContacts.size === contacts.length}
+                      checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedContacts.has(c.id))}
                       onChange={handleSelectAll}
                     />
                   </th>
@@ -202,7 +265,7 @@ export default function Friends() {
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
-                {contacts.map((user) => (
+                {filteredContacts.map((user) => (
                   <tr
                     key={user.id}
                     onClick={() => handleToggleContact(user.id)}
@@ -228,9 +291,19 @@ export default function Friends() {
                       )}
                     </td>
                     <td className="p-3">
-                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                        {user.type === 'group' ? 'Nhóm' : 'Bạn bè'}
-                      </span>
+                      {user.tags && user.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.tags.map((tag, idx) => (
+                            <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium whitespace-nowrap">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs whitespace-nowrap">
+                          Chưa phân loại
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

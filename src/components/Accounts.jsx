@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { MdSettings, MdRefresh } from 'react-icons/md';
-
 // Safely require electron if available
 const { ipcRenderer } = window.require ? window.require('electron') : {};
 
@@ -25,9 +23,6 @@ export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [isScanningGroups, setIsScanningGroups] = useState(false);
-  const [isScanningGroupsApi, setIsScanningGroupsApi] = useState(false);
   const [isWebviewLoading, setIsWebviewLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [zcaConnecting, setZcaConnecting] = useState(false);
@@ -193,66 +188,6 @@ export default function Accounts() {
       }
     } catch (err) {
       alert('Lỗi khi xóa tài khoản: ' + err.message);
-    }
-  };
-
-  const handleScanContacts = async () => {
-    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
-    try {
-      setIsScanning(true);
-      const res = await axios.post('http://localhost:3001/api/accounts/sync', {
-        accountId: selectedAccountId
-      });
-      if (res.data.success) {
-        alert('Đã quét và đồng bộ danh bạ thành công!');
-      } else {
-        alert('Lỗi: ' + res.data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Gửi lệnh thất bại: ' + err.message);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleScanGroups = async () => {
-    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
-    try {
-      setIsScanningGroups(true);
-      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups', {
-        accountId: selectedAccountId
-      });
-      if (res.data.success) {
-        alert('Đã quét và đồng bộ nhóm thành công!');
-      } else {
-        alert('Lỗi: ' + res.data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Gửi lệnh thất bại: ' + err.message);
-    } finally {
-      setIsScanningGroups(false);
-    }
-  };
-
-  const handleScanGroupsViaApi = async () => {
-    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
-    try {
-      setIsScanningGroupsApi(true);
-      const res = await axios.post('http://localhost:3001/api/accounts/sync-groups-v2', {
-        accountId: selectedAccountId
-      });
-      if (res.data.success) {
-        alert('Đã quét và đồng bộ nhóm qua API thành công!');
-      } else {
-        alert('Lỗi: ' + res.data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Gửi lệnh API thất bại: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setIsScanningGroupsApi(false);
     }
   };
 
@@ -430,49 +365,11 @@ export default function Accounts() {
           </div>
           <div className="flex space-x-3">
             <button
-              onClick={handleScanContacts}
-              disabled={isScanning || isScanningGroups || !selectedAccountId}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
-            >
-              {isScanning ? 'Đang quét...' : 'Quét Danh Bạ'}
-            </button>
-            <button
-              onClick={handleScanGroups}
-              disabled={isScanning || isScanningGroups || isScanningGroupsApi || !selectedAccountId}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
-            >
-              {isScanningGroups ? 'Đang quét...' : 'Quét Nhóm'}
-            </button>
-            <button
-              onClick={handleScanGroupsViaApi}
-              disabled={isScanning || isScanningGroups || isScanningGroupsApi || !selectedAccountId}
-              className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 transition-colors disabled:opacity-50"
-              title="Quét bằng API: nhanh hơn và có ID thật"
-            >
-              {isScanningGroupsApi ? 'Đang quét API...' : '⚡ Quét Nhóm (API)'}
-            </button>
-            <button
               onClick={handleSyncSession}
               disabled={isSyncing || !selectedAccountId}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
               {isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ lên Server'}
-            </button>
-            <button
-              onClick={() => webviewRef.current?.openDevTools()}
-              disabled={!selectedAccountId}
-              className="px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center"
-            >
-              <MdSettings className="mr-2" size={18} />
-              DevTools
-            </button>
-            <button
-              onClick={() => webviewRef.current?.reload()}
-              disabled={!selectedAccountId}
-              className="px-4 py-2 bg-blue-50 text-blue-600 font-medium rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50 flex items-center"
-            >
-              <MdRefresh className="mr-2" size={18} />
-              Làm mới Zalo
             </button>
             <button
               onClick={handleZcaConnect}
@@ -492,8 +389,8 @@ export default function Accounts() {
               const currentAccount = accounts.find(a => a.phoneNumber === selectedAccountId);
               // Kiểm tra xem chiến dịch có đang chạy không (nếu có API trả về cờ này sau này)
               const isWorkerRunning = currentAccount?.isWorkerRunning || false;
-              // Nếu đang quét (isScanning/isScanningGroups) hoặc worker đang chạy, ta sẽ ngắt kết nối trình duyệt
-              const shouldDisconnect = isScanning || isScanningGroups || isWorkerRunning;
+              // Nếu worker đang chạy, ta sẽ ngắt kết nối trình duyệt
+              const shouldDisconnect = isWorkerRunning;
 
               return (
                 <>
