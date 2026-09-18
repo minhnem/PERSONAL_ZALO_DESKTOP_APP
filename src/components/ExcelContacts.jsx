@@ -12,9 +12,22 @@ export default function ExcelContacts() {
   const [manualName, setManualName] = useState('');
   const [autoSelectCount, setAutoSelectCount] = useState(150);
 
+  const [activeTab, setActiveTab] = useState('excel');
+  const [excelBlacklist, setExcelBlacklist] = useState(() => {
+    const saved = localStorage.getItem('excelBlacklist');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const blacklistIds = new Set(excelBlacklist.map(b => b.id));
+  const validContacts = importedContacts.filter(c => !blacklistIds.has(c.id));
+
   useEffect(() => {
     localStorage.setItem('excelContacts', JSON.stringify(importedContacts));
   }, [importedContacts]);
+
+  useEffect(() => {
+    localStorage.setItem('excelBlacklist', JSON.stringify(excelBlacklist));
+  }, [excelBlacklist]);
   const excelInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -96,7 +109,7 @@ export default function ExcelContacts() {
   };
 
   const handleAutoSelect = () => {
-    const pendingContacts = importedContacts.filter(c => c.status !== 'sent');
+    const pendingContacts = validContacts.filter(c => c.status !== 'sent');
     const toSelect = pendingContacts.slice(0, autoSelectCount);
     if (toSelect.length === 0) return alert('Không còn số nào chưa gửi trong danh sách!');
     
@@ -106,10 +119,10 @@ export default function ExcelContacts() {
   };
 
   const handleSelectAll = () => {
-    if (selectedContacts.size === importedContacts.length) {
+    if (selectedContacts.size === validContacts.length) {
       setSelectedContacts(new Set());
     } else {
-      setSelectedContacts(new Set(importedContacts.map(c => c.id)));
+      setSelectedContacts(new Set(validContacts.map(c => c.id)));
     }
   };
 
@@ -157,6 +170,25 @@ export default function ExcelContacts() {
     setSelectedContacts(newSelected);
   };
 
+  const handleAddToBlacklist = (contact, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc muốn đưa ${contact.name || contact.id} vào danh sách không nhận tin?`)) return;
+    
+    if (!excelBlacklist.some(b => b.id === contact.id)) {
+      setExcelBlacklist([contact, ...excelBlacklist]);
+    }
+    
+    const newSelected = new Set(selectedContacts);
+    newSelected.delete(contact.id);
+    setSelectedContacts(newSelected);
+  };
+
+  const handleRemoveFromBlacklist = (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc muốn khôi phục số này?`)) return;
+    setExcelBlacklist(excelBlacklist.filter(b => b.id !== id));
+  };
+
   const handleSendToMessaging = () => {
     if (selectedContacts.size === 0) return alert('Vui lòng chọn ít nhất 1 người!');
 
@@ -176,18 +208,43 @@ export default function ExcelContacts() {
   return (
     <div className="h-full flex flex-col gap-6 p-6">
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 bg-white">
+          <button
+            onClick={() => setActiveTab('excel')}
+            className={`px-6 py-3 font-medium text-sm transition-colors ${activeTab === 'excel' ? 'text-orange-500 border-b-2 border-orange-500 bg-orange-50/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+          >
+            Danh sách tải lên
+          </button>
+          <button
+            onClick={() => setActiveTab('blacklist')}
+            className={`px-6 py-3 font-medium text-sm transition-colors ${activeTab === 'blacklist' ? 'text-red-500 border-b-2 border-red-500 bg-red-50/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+          >
+            Danh sách không nhận tin
+          </button>
+        </div>
+
         {/* Header & Actions */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <div>
             <h2 className="font-bold text-gray-800 text-lg flex items-center">
-              <span className="text-orange-500 mr-2">📊</span> Quản lý dữ liệu Excel
+              {activeTab === 'excel' ? (
+                <><span className="text-orange-500 mr-2">📊</span> Quản lý dữ liệu Excel</>
+              ) : (
+                <><span className="text-red-500 mr-2">🚫</span> Danh sách Không nhận tin</>
+              )}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              {importedContacts.length} liên hệ | Đã chọn: <span className="font-bold text-orange-600">{selectedContacts.size}</span>
+              {activeTab === 'excel' ? (
+                <>{validContacts.length} liên hệ | Đã chọn: <span className="font-bold text-orange-600">{selectedContacts.size}</span></>
+              ) : (
+                <>{excelBlacklist.length} liên hệ bị chặn</>
+              )}
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 items-end">
+          {activeTab === 'excel' && (
+            <div className="flex flex-col gap-3 items-end">
             {/* Hàng 1: Thêm thủ công */}
             <div className="flex items-center space-x-2 bg-white p-1 rounded-lg border border-gray-200">
               <input
@@ -273,36 +330,46 @@ export default function ExcelContacts() {
               </button>
             </div>
           </div>
+          )}
         </div>
 
         {/* Table */}
         <div className="flex-1 overflow-auto custom-scrollbar">
-          {importedContacts.length === 0 ? (
+          {(activeTab === 'excel' && validContacts.length === 0) ? (
             <div className="p-20 text-center text-gray-500">
               <span className="text-4xl mb-4 block">📄</span>
-              Chưa có dữ liệu. Vui lòng bấm "Nhập File Excel" để tải danh sách lên.
+              Chưa có dữ liệu hợp lệ. Vui lòng bấm "Nhập File Excel" để tải danh sách lên.
+            </div>
+          ) : (activeTab === 'blacklist' && excelBlacklist.length === 0) ? (
+            <div className="p-20 text-center text-gray-500">
+              <span className="text-4xl mb-4 block">✅</span>
+              Chưa có số nào bị chặn.
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-100 text-gray-600 text-sm sticky top-0 z-10">
                 <tr>
-                  <th className="p-3 w-12 text-center border-b border-gray-200">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                      checked={importedContacts.length > 0 && selectedContacts.size === importedContacts.length}
-                      onChange={handleSelectAll}
-                    />
-                  </th>
+                  {activeTab === 'excel' && (
+                    <th className="p-3 w-12 text-center border-b border-gray-200">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                        checked={validContacts.length > 0 && selectedContacts.size === validContacts.length}
+                        onChange={handleSelectAll}
+                      />
+                    </th>
+                  )}
                   <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
                   <th className="p-3 border-b border-gray-200 font-semibold">Tên Khách Hàng</th>
                   <th className="p-3 border-b border-gray-200 font-semibold">UID / Số điện thoại</th>
-                  <th className="p-3 border-b border-gray-200 font-semibold text-center w-28">Trạng thái</th>
-                  <th className="p-3 border-b border-gray-200 w-12 text-center"></th>
+                  {activeTab === 'excel' && (
+                    <th className="p-3 border-b border-gray-200 font-semibold text-center w-28">Trạng thái</th>
+                  )}
+                  <th className="p-3 border-b border-gray-200 w-24 text-center">Hành động</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
-                {importedContacts.map((user, i) => (
+                {activeTab === 'excel' ? validContacts.map((user, i) => (
                   <tr
                     key={user.id + i}
                     onClick={() => handleToggleContact(user.id)}
@@ -332,11 +399,37 @@ export default function ExcelContacts() {
                     </td>
                     <td className="p-3 text-center">
                       <button
+                        onClick={(e) => handleAddToBlacklist(user, e)}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-md hover:bg-red-50 mr-2"
+                        title="Chặn"
+                      >
+                        🚫
+                      </button>
+                      <button
                         onClick={(e) => handleDeleteContact(user.id, e)}
                         className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-md hover:bg-red-50"
                         title="Xóa"
                       >
                         🗑️
+                      </button>
+                    </td>
+                  </tr>
+                )) : excelBlacklist.map((user, i) => (
+                  <tr key={user.id + i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="p-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm bg-gray-200 text-gray-600 overflow-hidden">
+                        🚫
+                      </div>
+                    </td>
+                    <td className="p-3 font-medium text-gray-500 line-through">{user.name}</td>
+                    <td className="p-3 text-gray-400 line-through">{user.id}</td>
+                    <td className="p-3 text-center">
+                      <button
+                        onClick={(e) => handleRemoveFromBlacklist(user.id, e)}
+                        className="text-green-600 hover:text-green-700 transition-colors p-1.5 rounded-md hover:bg-green-50"
+                        title="Khôi phục"
+                      >
+                        ♻️
                       </button>
                     </td>
                   </tr>

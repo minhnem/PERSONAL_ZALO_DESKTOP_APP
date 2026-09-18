@@ -12,11 +12,18 @@ export default function Friends() {
   const [isScanningContacts, setIsScanningContacts] = useState(false);
   const [isScanningApi, setIsScanningApi] = useState(false);
   const [selectedTagFilter, setSelectedTagFilter] = useState('');
+  
+  const [activeTab, setActiveTab] = useState('friends');
+  const [blacklist, setBlacklist] = useState([]);
 
   const navigate = useNavigate();
 
-  const availableTags = [...new Set(contacts.flatMap(c => c.tags || []))].filter(Boolean);
-  const filteredContacts = contacts.filter(c => {
+  // Lọc contact cho tab friends
+  const blacklistIds = new Set(blacklist.map(b => b.contactId));
+  const validContacts = contacts.filter(c => !blacklistIds.has(c.id));
+
+  const availableTags = [...new Set(validContacts.flatMap(c => c.tags || []))].filter(Boolean);
+  const filteredContacts = validContacts.filter(c => {
     if (!selectedTagFilter) return true;
     return c.tags && c.tags.includes(selectedTagFilter);
   });
@@ -39,18 +46,25 @@ export default function Friends() {
   useEffect(() => {
     if (!selectedAccountId) {
       setContacts([]);
+      setBlacklist([]);
       setSelectedContacts(new Set());
       return;
     }
 
     setIsLoadingContacts(true);
-    axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`)
-      .then(res => {
-        if (res.data.success) {
-          setContacts(res.data.data);
-          setSelectedContacts(new Set()); // Reset selection
-          setSelectedTagFilter('');
+    Promise.all([
+      axios.get(`http://localhost:3001/api/contacts?accountId=${selectedAccountId}`),
+      axios.get(`http://localhost:3001/api/blacklist?accountId=${selectedAccountId}`)
+    ])
+      .then(([contactsRes, blacklistRes]) => {
+        if (contactsRes.data.success) {
+          setContacts(contactsRes.data.data);
         }
+        if (blacklistRes.data.success) {
+          setBlacklist(blacklistRes.data.data);
+        }
+        setSelectedContacts(new Set());
+        setSelectedTagFilter('');
       })
       .catch(err => console.error('Lỗi tải danh bạ:', err))
       .finally(() => setIsLoadingContacts(false));
@@ -72,6 +86,38 @@ export default function Friends() {
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
     setSelectedContacts(newSet);
+  };
+
+  const handleAddToBlacklist = async (contact) => {
+    if (!window.confirm(`Bạn có chắc muốn chặn ${contact.name}?`)) return;
+    try {
+      const res = await axios.post('http://localhost:3001/api/blacklist', {
+        accountId: selectedAccountId,
+        contactId: contact.id,
+        name: contact.name,
+        avatar: contact.avatar
+      });
+      if (res.data.success) {
+        setBlacklist([res.data.data, ...blacklist]);
+        const newSelected = new Set(selectedContacts);
+        newSelected.delete(contact.id);
+        setSelectedContacts(newSelected);
+      }
+    } catch (err) {
+      alert('Lỗi thêm blacklist: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleRemoveFromBlacklist = async (contactId) => {
+    if (!window.confirm(`Bạn có chắc muốn gỡ chặn người này?`)) return;
+    try {
+      const res = await axios.delete(`http://localhost:3001/api/blacklist/${contactId}?accountId=${selectedAccountId}`);
+      if (res.data.success) {
+        setBlacklist(blacklist.filter(b => b.contactId !== contactId));
+      }
+    } catch (err) {
+      alert('Lỗi gỡ chặn: ' + (err.response?.data?.error || err.message));
+    }
   };
 
   const handleSendToMessaging = () => {
@@ -185,16 +231,39 @@ export default function Friends() {
 
       {/* RIGHT COLUMN: CONTACTS TABLE */}
       <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 bg-white">
+          <button
+            onClick={() => setActiveTab('friends')}
+            className={`px-6 py-3 font-medium text-sm transition-colors ${activeTab === 'friends' ? 'text-brand border-b-2 border-brand bg-blue-50/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+          >
+            Danh sách bạn bè
+          </button>
+          <button
+            onClick={() => setActiveTab('blacklist')}
+            className={`px-6 py-3 font-medium text-sm transition-colors ${activeTab === 'blacklist' ? 'text-red-500 border-b-2 border-red-500 bg-red-50/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+          >
+            Danh sách không nhận tin
+          </button>
+        </div>
+
         {/* Header & Actions */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <div>
-            <h2 className="font-bold text-gray-800 text-lg">Danh bạ Bạn bè</h2>
+            <h2 className="font-bold text-gray-800 text-lg">
+              {activeTab === 'friends' ? 'Danh bạ Bạn bè' : 'Danh sách Không nhận tin'}
+            </h2>
             <p className="text-sm text-gray-600 mt-1">
-              {filteredContacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span>
+              {activeTab === 'friends' ? (
+                <>{filteredContacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span></>
+              ) : (
+                <>{blacklist.length} liên hệ bị chặn</>
+              )}
             </p>
           </div>
 
-          <div className="flex gap-3 items-center">
+          {activeTab === 'friends' && (
+            <div className="flex gap-3 items-center">
             {availableTags.length > 0 && (
               <select
                 value={selectedTagFilter}
@@ -234,6 +303,7 @@ export default function Friends() {
               <span className="mr-2">✉️</span> Chuyển sang Nhắn tin
             </button>
           </div>
+          )}
         </div>
 
         {/* Table */}
@@ -242,30 +312,37 @@ export default function Friends() {
             <div className="p-20 flex justify-center text-gray-400">Đang tải danh bạ...</div>
           ) : !selectedAccountId ? (
             <div className="p-20 text-center text-gray-500">Vui lòng chọn tài khoản ở cột bên trái</div>
-          ) : contacts.length === 0 ? (
+          ) : (activeTab === 'friends' && contacts.length === 0) ? (
             <div className="p-20 text-center text-gray-500">
               Tài khoản này chưa quét được danh bạ nào.<br />
               Vui lòng qua tab "Tài khoản Zalo", bấm nút Quét để đồng bộ.
             </div>
+          ) : (activeTab === 'blacklist' && blacklist.length === 0) ? (
+            <div className="p-20 text-center text-gray-500">Chưa có ai trong danh sách chặn.</div>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-100 text-gray-600 text-sm sticky top-0 z-10">
                 <tr>
-                  <th className="p-3 w-12 text-center border-b border-gray-200">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
-                      checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedContacts.has(c.id))}
-                      onChange={handleSelectAll}
-                    />
-                  </th>
+                  {activeTab === 'friends' && (
+                    <th className="p-3 w-12 text-center border-b border-gray-200">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
+                        checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedContacts.has(c.id))}
+                        onChange={handleSelectAll}
+                      />
+                    </th>
+                  )}
                   <th className="p-3 border-b border-gray-200 w-16">Avatar</th>
                   <th className="p-3 border-b border-gray-200 font-semibold">Tên Zalo</th>
-                  <th className="p-3 border-b border-gray-200 font-semibold">Phân loại</th>
+                  {activeTab === 'friends' && (
+                    <th className="p-3 border-b border-gray-200 font-semibold">Phân loại</th>
+                  )}
+                  <th className="p-3 border-b border-gray-200 font-semibold w-24 text-center">Hành động</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
-                {filteredContacts.map((user) => (
+                {activeTab === 'friends' ? filteredContacts.map((user) => (
                   <tr
                     key={user.id}
                     onClick={() => handleToggleContact(user.id)}
@@ -304,6 +381,36 @@ export default function Friends() {
                           Chưa phân loại
                         </span>
                       )}
+                    </td>
+                    <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        onClick={() => handleAddToBlacklist(user)}
+                        className="p-1.5 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
+                        title="Chặn gửi tin"
+                      >
+                        🚫
+                      </button>
+                    </td>
+                  </tr>
+                )) : blacklist.map((user) => (
+                  <tr key={user.contactId} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="p-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm bg-gray-200 text-gray-600 overflow-hidden">
+                        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : (user.name || 'Z').charAt(0)}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <span className="font-medium text-gray-600 line-through">{user.name}</span>
+                      <span className="ml-2 text-xs text-gray-400 font-mono" title={`UID: ${user.contactId}`}>⚡ UID</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <button 
+                        onClick={() => handleRemoveFromBlacklist(user.contactId)}
+                        className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                        title="Khôi phục"
+                      >
+                        ♻️
+                      </button>
                     </td>
                   </tr>
                 ))}

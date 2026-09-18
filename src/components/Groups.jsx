@@ -12,6 +12,8 @@ export default function Groups() {
   const [isScanningGroups, setIsScanningGroups] = useState(false);
   const [isScanningGroupsApi, setIsScanningGroupsApi] = useState(false);
 
+  const [blacklist, setBlacklist] = useState([]);
+
   // States cho Thành viên nhóm
   const [activeGroup, setActiveGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
@@ -19,6 +21,8 @@ export default function Groups() {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isScanningMembers, setIsScanningMembers] = useState(false);
   const [isScanningMembersApi, setIsScanningMembersApi] = useState(false);
+
+  const [activeMemberTab, setActiveMemberTab] = useState('members');
 
   const navigate = useNavigate();
 
@@ -36,23 +40,30 @@ export default function Groups() {
       .catch(err => console.error('Lỗi tải danh sách tài khoản:', err));
   }, []);
 
-  // 2. Fetch Groups when selectedAccountId changes
+  // 2. Fetch Groups & Blacklist when selectedAccountId changes
   useEffect(() => {
     if (!selectedAccountId) {
       setGroups([]);
+      setBlacklist([]);
       setSelectedGroups(new Set());
       return;
     }
 
     setIsLoadingGroups(true);
-    axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`)
-      .then(res => {
-        if (res.data.success) {
-          setGroups(res.data.data);
-          setSelectedGroups(new Set()); // Reset selection
+    Promise.all([
+      axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`),
+      axios.get(`http://localhost:3001/api/blacklist?accountId=${selectedAccountId}`)
+    ])
+      .then(([groupsRes, blacklistRes]) => {
+        if (groupsRes.data.success) {
+          setGroups(groupsRes.data.data);
+          setSelectedGroups(new Set());
+        }
+        if (blacklistRes.data.success) {
+          setBlacklist(blacklistRes.data.data);
         }
       })
-      .catch(err => console.error('Lỗi tải danh sách nhóm:', err))
+      .catch(err => console.error('Lỗi tải dữ liệu:', err))
       .finally(() => setIsLoadingGroups(false));
   }, [selectedAccountId]);
 
@@ -188,10 +199,10 @@ export default function Groups() {
   };
 
   const handleSelectAllMembers = () => {
-    if (selectedMembers.size === groupMembers.length) {
+    if (selectedMembers.size === validMembers.length) {
       setSelectedMembers(new Set());
     } else {
-      setSelectedMembers(new Set(groupMembers.map(m => m.id)));
+      setSelectedMembers(new Set(validMembers.map(m => m.id)));
     }
   };
 
@@ -218,6 +229,44 @@ export default function Groups() {
     navigate('/');
   };
 
+  const handleAddToBlacklist = async (member, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc muốn chặn ${member.name}?`)) return;
+    try {
+      const res = await axios.post('http://localhost:3001/api/blacklist', {
+        accountId: selectedAccountId,
+        contactId: member.id,
+        name: member.name,
+        avatar: member.avatar
+      });
+      if (res.data.success) {
+        setBlacklist([res.data.data, ...blacklist]);
+        const newSelected = new Set(selectedMembers);
+        newSelected.delete(member.id);
+        setSelectedMembers(newSelected);
+      }
+    } catch (err) {
+      alert('Lỗi thêm blacklist: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleRemoveFromBlacklist = async (contactId, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc muốn gỡ chặn người này?`)) return;
+    try {
+      const res = await axios.delete(`http://localhost:3001/api/blacklist/${contactId}?accountId=${selectedAccountId}`);
+      if (res.data.success) {
+        setBlacklist(blacklist.filter(b => b.contactId !== contactId));
+      }
+    } catch (err) {
+      alert('Lỗi gỡ chặn: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const blacklistIds = new Set(blacklist.map(b => b.contactId));
+  const validMembers = groupMembers.filter(m => !blacklistIds.has(m.id));
+  const blacklistedMembers = groupMembers.filter(m => blacklistIds.has(m.id));
+
   return (
     <div className="h-full flex gap-6 p-6">
 
@@ -239,8 +288,8 @@ export default function Groups() {
                 key={acc.phoneNumber}
                 onClick={() => setSelectedAccountId(acc.phoneNumber)}
                 className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${selectedAccountId === acc.phoneNumber
-                    ? 'bg-blue-50 border-l-4 border-blue-500'
-                    : 'hover:bg-gray-50 border-l-4 border-transparent'
+                  ? 'bg-blue-50 border-l-4 border-blue-500'
+                  : 'hover:bg-gray-50 border-l-4 border-transparent'
                   }`}
               >
                 <div className="w-10 h-10 rounded-full bg-gray-200 flex flex-shrink-0 items-center justify-center font-bold text-gray-600 overflow-hidden mr-3">
@@ -365,67 +414,96 @@ export default function Groups() {
       {activeGroup && (
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
           <div className="w-[450px] bg-white h-full shadow-2xl flex flex-col animate-slide-in-right">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <div>
-                <h3 className="font-bold text-gray-800 text-lg">{activeGroup.name}</h3>
-                <p className="text-sm text-gray-500">{groupMembers.length} thành viên | Đã chọn: <span className="font-bold text-blue-600">{selectedMembers.size}</span></p>
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <h3 className="font-bold text-gray-800 text-lg">{activeGroup.name}</h3>
+                  <p className="text-sm text-gray-500">
+                    {activeMemberTab === 'members' ? (
+                      <>{validMembers.length} thành viên | Đã chọn: <span className="font-bold text-blue-600">{selectedMembers.size}</span></>
+                    ) : (
+                      <>{blacklistedMembers.length} thành viên bị chặn</>
+                    )}
+                  </p>
+                </div>
+                <button onClick={() => setActiveGroup(null)} className="text-gray-400 hover:text-red-500 transition-colors text-xl font-bold px-2">
+                  ✕
+                </button>
               </div>
-              <button onClick={() => setActiveGroup(null)} className="text-gray-400 hover:text-red-500 transition-colors text-xl font-bold px-2">
-                ✕
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActiveMemberTab('members')}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeMemberTab === 'members' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Thành viên
+                </button>
+                <button
+                  onClick={() => setActiveMemberTab('blacklist')}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeMemberTab === 'blacklist' ? 'bg-red-100 text-red-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Không nhận tin
+                </button>
+              </div>
             </div>
-            
-            <div className="p-3 border-b border-gray-100 flex gap-2">
-              <button 
-                onClick={handleSyncMembers}
-                disabled={isScanningMembers || isScanningMembersApi}
-                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
-              >
-                {isScanningMembers ? '⏳ Đang quét...' : '🔄 Quét (Playwright)'}
-              </button>
-              <button 
-                onClick={handleSyncMembersViaApi}
-                disabled={isScanningMembers || isScanningMembersApi}
-                className="flex-1 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
-                title="Quét bằng API: nhanh hơn, có UID thật, kể cả thành viên ẩn"
-              >
-                {isScanningMembersApi ? '⏳ Đang quét...' : '⚡ Quét bằng API'}
-              </button>
-              <button 
-                onClick={handleSendMembersToMessaging}
-                disabled={selectedMembers.size === 0}
-                className="flex-1 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg font-medium text-sm disabled:opacity-50 transition-colors"
-              >
-                ✉️ Nhắn tin
-              </button>
-            </div>
+
+            {activeMemberTab === 'members' && (
+              <div className="p-3 border-b border-gray-100 flex gap-2">
+                <button
+                  onClick={handleSyncMembers}
+                  disabled={isScanningMembers || isScanningMembersApi}
+                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
+                >
+                  {isScanningMembers ? '⏳ Đang quét...' : '🔄 Quét (Playwright)'}
+                </button>
+                <button
+                  onClick={handleSyncMembersViaApi}
+                  disabled={isScanningMembers || isScanningMembersApi}
+                  className="flex-1 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium text-sm disabled:opacity-50 flex items-center justify-center transition-colors"
+                  title="Quét bằng API: nhanh hơn, có UID thật, kể cả thành viên ẩn"
+                >
+                  {isScanningMembersApi ? '⏳ Đang quét...' : '⚡ Quét bằng API'}
+                </button>
+                <button
+                  onClick={handleSendMembersToMessaging}
+                  disabled={selectedMembers.size === 0}
+                  className="flex-1 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg font-medium text-sm disabled:opacity-50 transition-colors"
+                >
+                  ✉️ Nhắn tin
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
               {isLoadingMembers ? (
                 <div className="text-center p-10 text-gray-400">Đang tải...</div>
-              ) : groupMembers.length === 0 ? (
+              ) : (activeMemberTab === 'members' && validMembers.length === 0) ? (
                 <div className="text-center p-10 text-gray-500">
                   <p>Chưa có dữ liệu thành viên.</p>
-                  <p className="text-sm mt-2">Bấm nút "Quét cập nhật" để lấy danh sách từ Zalo.</p>
+                </div>
+              ) : (activeMemberTab === 'blacklist' && blacklistedMembers.length === 0) ? (
+                <div className="text-center p-10 text-gray-500">
+                  <p>Chưa có ai trong danh sách chặn của nhóm này.</p>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <div className="flex items-center p-2 mb-2 bg-gray-50 rounded-lg">
-                    <input 
-                      type="checkbox"
-                      className="w-4 h-4 mr-3 rounded border-gray-300 text-brand focus:ring-brand"
-                      checked={groupMembers.length > 0 && selectedMembers.size === groupMembers.length}
-                      onChange={handleSelectAllMembers}
-                    />
-                    <span className="text-sm font-medium text-gray-600">Chọn tất cả</span>
-                  </div>
-                  {groupMembers.map(m => (
-                    <div 
+                  {activeMemberTab === 'members' && (
+                    <div className="flex items-center p-2 mb-2 bg-gray-50 rounded-lg">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 mr-3 rounded border-gray-300 text-brand focus:ring-brand"
+                        checked={validMembers.length > 0 && selectedMembers.size === validMembers.length}
+                        onChange={handleSelectAllMembers}
+                      />
+                      <span className="text-sm font-medium text-gray-600">Chọn tất cả</span>
+                    </div>
+                  )}
+                  {activeMemberTab === 'members' ? validMembers.map(m => (
+                    <div
                       key={m.id}
                       onClick={() => handleToggleMember(m.id)}
                       className={`flex items-center p-2 rounded-lg cursor-pointer transition-colors ${selectedMembers.has(m.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
                     >
-                      <input 
+                      <input
                         type="checkbox"
                         className="w-4 h-4 mr-3 rounded border-gray-300 text-brand focus:ring-brand"
                         checked={selectedMembers.has(m.id)}
@@ -440,6 +518,30 @@ export default function Groups() {
                           <span className="ml-2 text-xs text-purple-500 font-mono" title={`UID: ${m.id}`}>⚡ UID</span>
                         )}
                       </div>
+                      <button
+                        onClick={(e) => handleAddToBlacklist(m, e)}
+                        className="p-1.5 ml-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Chặn gửi tin"
+                      >
+                        🚫
+                      </button>
+                    </div>
+                  )) : blacklistedMembers.map(m => (
+                    <div key={m.id} className="flex items-center p-2 rounded-lg bg-gray-50 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-gray-200 mr-3 flex-shrink-0 flex items-center justify-center text-xs font-bold text-gray-500 overflow-hidden opacity-50">
+                        {m.avatar ? <img src={m.avatar} className="w-full h-full object-cover" /> : (m.name ? m.name.charAt(0) : '?')}
+                      </div>
+                      <div className="flex-1 min-w-0 truncate opacity-50">
+                        <span className="text-sm font-medium text-gray-800 line-through">{m.name}</span>
+                        <span className="ml-2 text-xs text-gray-400 font-mono" title={`UID: ${m.id}`}>⚡ UID</span>
+                      </div>
+                      <button
+                        onClick={(e) => handleRemoveFromBlacklist(m.id, e)}
+                        className="p-1.5 ml-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                        title="Khôi phục"
+                      >
+                        ♻️
+                      </button>
                     </div>
                   ))}
                 </div>
