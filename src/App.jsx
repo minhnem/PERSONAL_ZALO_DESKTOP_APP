@@ -6,6 +6,7 @@ import Friends from './components/Friends'
 import Groups from './components/Groups'
 import ExcelContacts from './components/ExcelContacts'
 import Campaigns from './components/Campaigns'
+import AutoReminders from './components/AutoReminders'
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/groups" element={<Groups />} />
             <Route path="/excel-contacts" element={<ExcelContacts />} />
             <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/auto-reminders" element={<AutoReminders />} />
           </Routes>
         </main>
       </div>

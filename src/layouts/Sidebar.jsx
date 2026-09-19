@@ -10,7 +10,8 @@ import {
   MdAttachMoney,
   MdShare,
   MdTableChart,
-  MdList
+  MdList,
+  MdAutorenew
 } from 'react-icons/md';
 import { IoChevronDownOutline, IoChevronUpOutline } from 'react-icons/io5';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -63,7 +64,18 @@ const Sidebar = () => {
             onClick={() => navigate('/campaigns')}
           >
             <MdList size={22} className="mr-3" />
-            Quản lý Chiến dịch
+            Gửi tin hàng loạt
+          </li>
+
+          {/* Menu Auto Reminders */}
+          <li
+            className={`flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium ${location.pathname === '/auto-reminders' ? 'bg-[#e5f0ff] text-blue-600 border-l-4 border-blue-600' : 'text-gray-700 hover:bg-gray-100 hover:text-blue-600'}`}
+            onClick={() => navigate('/auto-reminders')}
+          >
+            <div className="flex items-center">
+              <MdAutorenew className={`mr-3 ${location.pathname === '/auto-reminders' ? 'text-blue-600' : 'text-gray-600'}`} size={20} />
+              Chiến dịch nhắc mua lại
+            </div>
           </li>
 
           {/* Dropdown 1 */}
