@@ -184,7 +184,8 @@ export default function Groups() {
     setIsScanningMembersApi(true);
     axios.post('http://localhost:3001/api/accounts/sync-group-members-v2', {
       accountId: selectedAccountId,
-      groupId: activeGroup.zaloId // Dùng zaloId thật của nhóm
+      groupId: activeGroup.id,
+      groupZaloId: activeGroup.zaloId // Dùng zaloId thật của nhóm để gọi Zalo API
     })
       .then(res => {
         if (res.data.success) {
