@@ -65,7 +65,7 @@ const Sidebar = ({ user, onLogout }) => {
             onClick={() => navigate('/campaigns')}
           >
             <MdList size={22} className="mr-3" />
-            Gửi tin hàng loạt
+            Lịch sử gửi tin
           </li>
 
           {/* Menu Auto Reminders */}
@@ -175,9 +175,9 @@ const Sidebar = ({ user, onLogout }) => {
             1/100 Zalo
           </div>
         </div>
-        
+
         <div className="mt-4 pt-4 border-t border-gray-100">
-          <button 
+          <button
             onClick={onLogout}
             className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
           >
