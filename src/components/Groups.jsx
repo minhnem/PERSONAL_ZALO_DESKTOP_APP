@@ -12,6 +12,11 @@ export default function Groups() {
   const [isScanningGroups, setIsScanningGroups] = useState(false);
   const [isScanningGroupsApi, setIsScanningGroupsApi] = useState(false);
 
+  // States cho tính năng quét qua Link
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkInput, setLinkInput] = useState('');
+  const [isScanningByLink, setIsScanningByLink] = useState(false);
+
   const [blacklist, setBlacklist] = useState([]);
 
   // States cho Thành viên nhóm
@@ -141,6 +146,35 @@ export default function Groups() {
       alert('Gửi lệnh API thất bại: ' + (err.response?.data?.error || err.message));
     } finally {
       setIsScanningGroupsApi(false);
+    }
+  };
+
+  const handleScanByLink = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản');
+    if (!linkInput.trim()) return alert('Vui lòng nhập link nhóm');
+    if (!linkInput.includes('zalo.me/g/')) return alert('Link nhóm Zalo không hợp lệ');
+
+    try {
+      setIsScanningByLink(true);
+      const res = await axios.post('http://localhost:3001/api/accounts/sync-group-members-by-link', {
+        accountId: selectedAccountId,
+        groupLink: linkInput.trim()
+      });
+      if (res.data.success) {
+        alert(res.data.message);
+        setShowLinkModal(false);
+        setLinkInput('');
+        // Refresh groups
+        const groupsRes = await axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`);
+        if (groupsRes.data.success) setGroups(groupsRes.data.data);
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Quét bằng link thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsScanningByLink(false);
     }
   };
 
@@ -332,6 +366,14 @@ export default function Groups() {
               title="Quét bằng API: nhanh hơn và có ID thật"
             >
               {isScanningGroupsApi ? '⏳ Đang quét API...' : '⚡ Quét Nhóm API'}
+            </button>
+            <button
+              onClick={() => setShowLinkModal(true)}
+              disabled={isScanningGroups || isScanningGroupsApi}
+              className="px-4 py-2.5 bg-green-100 text-green-700 font-medium rounded-lg hover:bg-green-200 disabled:opacity-50 transition-all flex items-center"
+              title="Quét danh sách thành viên từ link nhóm (Không cần tham gia)"
+            >
+              🔗 Quét bằng Link
             </button>
             <button
               onClick={handleSendToMessaging}
@@ -547,6 +589,50 @@ export default function Groups() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LINK SCANNER MODAL */}
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl w-[450px] overflow-hidden animate-fade-in-up">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-800 text-lg">🔗 Quét Nhóm Bằng Link</h3>
+              <button onClick={() => setShowLinkModal(false)} className="text-gray-400 hover:text-red-500 font-bold text-xl px-2">✕</button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-600 mb-4">
+                Tính năng này giúp bạn quét toàn bộ danh sách thành viên của một nhóm thông qua link chia sẻ 
+                <strong> mà không cần phải tham gia vào nhóm đó</strong>.
+              </p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link nhóm Zalo (zalo.me/g/...):</label>
+                <input
+                  type="text"
+                  value={linkInput}
+                  onChange={(e) => setLinkInput(e.target.value)}
+                  placeholder="Ví dụ: https://zalo.me/g/abcdef123"
+                  className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button 
+                onClick={() => setShowLinkModal(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleScanByLink}
+                disabled={isScanningByLink || !linkInput.trim()}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg disabled:opacity-50 transition-colors flex items-center"
+              >
+                {isScanningByLink ? '⏳ Đang xử lý...' : 'Bắt đầu quét'}
+              </button>
             </div>
           </div>
         </div>

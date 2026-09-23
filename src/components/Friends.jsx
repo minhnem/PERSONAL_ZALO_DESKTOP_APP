@@ -15,6 +15,11 @@ export default function Friends() {
   
   const [activeTab, setActiveTab] = useState('friends');
   const [blacklist, setBlacklist] = useState([]);
+  
+  // State cho phần thêm bạn qua SĐT
+  const [phoneNumbersInput, setPhoneNumbersInput] = useState('');
+  const [addPhoneMessage, setAddPhoneMessage] = useState('Chào {first_name}, mình kết bạn nhé!');
+  const [isSendingPhoneReq, setIsSendingPhoneReq] = useState(false);
 
   const navigate = useNavigate();
 
@@ -191,6 +196,37 @@ export default function Friends() {
     }
   };
 
+  const handleSendFriendRequestByPhone = async () => {
+    if (!selectedAccountId) return alert('Vui lòng chọn tài khoản Zalo gửi lời mời!');
+    if (!phoneNumbersInput.trim()) return alert('Vui lòng nhập ít nhất 1 số điện thoại!');
+    
+    // Tách SĐT bằng xuống dòng hoặc dấu phẩy
+    const rawPhones = phoneNumbersInput.split(/[\n,]+/);
+    const phoneNumbers = rawPhones.map(p => p.trim()).filter(p => p.length >= 9);
+
+    if (phoneNumbers.length === 0) return alert('Không tìm thấy số điện thoại hợp lệ!');
+
+    setIsSendingPhoneReq(true);
+    try {
+      const res = await axios.post('http://localhost:3001/api/send-friend-by-phone', {
+        accountId: selectedAccountId,
+        phoneNumbers,
+        message: addPhoneMessage
+      });
+      if (res.data.success) {
+        alert(`Thành công! Đã lên lịch gửi kết bạn cho ${phoneNumbers.length} số điện thoại.`);
+        setPhoneNumbersInput(''); // Xóa trắng ô nhập sau khi gửi
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gửi yêu cầu thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSendingPhoneReq(false);
+    }
+  };
+
   return (
     <div className="h-full flex gap-6 p-6">
 
@@ -245,22 +281,29 @@ export default function Friends() {
           >
             Danh sách không nhận tin
           </button>
+          <button
+            onClick={() => setActiveTab('add_by_phone')}
+            className={`px-6 py-3 font-medium text-sm transition-colors flex items-center gap-2 ${activeTab === 'add_by_phone' ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+          >
+            ⚡ Kết bạn qua SĐT
+          </button>
         </div>
 
         {/* Header & Actions */}
-        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-          <div>
-            <h2 className="font-bold text-gray-800 text-lg">
-              {activeTab === 'friends' ? 'Danh bạ Bạn bè' : 'Danh sách Không nhận tin'}
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              {activeTab === 'friends' ? (
-                <>{filteredContacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span></>
-              ) : (
-                <>{blacklist.length} liên hệ bị chặn</>
-              )}
-            </p>
-          </div>
+        {activeTab !== 'add_by_phone' && (
+          <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <div>
+              <h2 className="font-bold text-gray-800 text-lg">
+                {activeTab === 'friends' ? 'Danh bạ Bạn bè' : 'Danh sách Không nhận tin'}
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {activeTab === 'friends' ? (
+                  <>{filteredContacts.length} liên hệ | Đã chọn: <span className="font-bold text-blue-600">{selectedContacts.size}</span></>
+                ) : (
+                  <>{blacklist.length} liên hệ bị chặn</>
+                )}
+              </p>
+            </div>
 
           {activeTab === 'friends' && (
             <div className="flex gap-3 items-center">
@@ -305,10 +348,52 @@ export default function Friends() {
           </div>
           )}
         </div>
+        )}
 
-        {/* Table */}
+        {/* Table / Content */}
         <div className="flex-1 overflow-auto custom-scrollbar">
-          {isLoadingContacts ? (
+          {activeTab === 'add_by_phone' ? (
+            <div className="p-6 max-w-3xl mx-auto space-y-6">
+              <div className="bg-purple-50 text-purple-800 p-4 rounded-xl border border-purple-100 flex items-start">
+                <span className="text-xl mr-3">⚡</span>
+                <div>
+                  <h3 className="font-bold text-sm">Gửi lời mời kết bạn tự động qua API (Nhanh siêu tốc)</h3>
+                  <p className="text-sm mt-1 opacity-90">Hệ thống sẽ tự động quét số điện thoại ra tài khoản Zalo tương ứng và đẩy hàng chờ gửi lời mời kết bạn ngầm mà không cần hiện trình duyệt. Quá trình gửi sẽ được tự động giãn cách 5-15s để chống spam.</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Danh sách số điện thoại</label>
+                <textarea
+                  className="w-full h-40 p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-sm leading-relaxed"
+                  placeholder="0912345678&#10;0987654321&#10;(Mỗi số điện thoại 1 dòng hoặc cách nhau bởi dấu phẩy)"
+                  value={phoneNumbersInput}
+                  onChange={e => setPhoneNumbersInput(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-2">Hỗ trợ các đầu số 09, 849, hoặc định dạng chuẩn Zalo.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Lời nhắn kèm theo</label>
+                <textarea
+                  className="w-full h-24 p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-sm"
+                  value={addPhoneMessage}
+                  onChange={e => setAddPhoneMessage(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-2">Hỗ trợ biến: {'{name}'} (Tên đầy đủ Zalo), {'{first_name}'} (Tên gọi), {'{last_name}'} (Họ), {'{date}'} (Ngày).</p>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-gray-100">
+                <button
+                  onClick={handleSendFriendRequestByPhone}
+                  disabled={isSendingPhoneReq || !selectedAccountId}
+                  className="px-8 py-3 bg-purple-600 text-white font-bold rounded-xl shadow-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center"
+                >
+                  {isSendingPhoneReq ? '⏳ Đang lên lịch gửi...' : '🚀 Bắt đầu gửi kết bạn'}
+                </button>
+              </div>
+            </div>
+          ) : isLoadingContacts ? (
             <div className="p-20 flex justify-center text-gray-400">Đang tải danh bạ...</div>
           ) : !selectedAccountId ? (
             <div className="p-20 text-center text-gray-500">Vui lòng chọn tài khoản ở cột bên trái</div>

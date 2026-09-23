@@ -264,6 +264,26 @@ export default function Messaging() {
     }
   };
 
+  const handleCancelCampaign = async (campaignId) => {
+    if (!window.confirm('Bạn có chắc chắn muốn DỪNG chiến dịch này lại không? Những người chưa được gửi sẽ bị hủy bỏ.')) return;
+    
+    try {
+      const res = await axios.post(`http://localhost:3001/api/campaigns/${campaignId}/cancel`);
+      if (res.data.success) {
+        alert('Đã lệnh dừng chiến dịch thành công!');
+        // Update local state immediately
+        setActiveCampaignsData(prev => 
+          prev.map(c => c._id === campaignId ? { ...c, status: 'cancelled' } : c)
+        );
+      } else {
+        alert('Lỗi: ' + res.data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi khi dừng chiến dịch: ' + err.message);
+    }
+  };
+
   const handleInsertShortcode = (code) => {
     const textarea = document.getElementById('message-textarea');
     if (textarea) {
@@ -578,8 +598,18 @@ export default function Messaging() {
                     <div key={campaignData._id} className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
                       <div className="font-bold text-gray-800 text-sm mb-2 truncate" title={campaignData.name}>{campaignData.name}</div>
                       <div className="flex justify-between text-xs mb-2">
-                        <span className="text-gray-600">
-                          <span className="font-semibold text-blue-600">{campaignData.status === 'completed' ? 'Hoàn tất' : 'Đang chạy'}</span>
+                        <span className="text-gray-600 flex items-center space-x-2">
+                          <span className={`font-semibold ${campaignData.status === 'completed' ? 'text-green-600' : campaignData.status === 'cancelled' ? 'text-red-600' : 'text-blue-600'}`}>
+                            {campaignData.status === 'completed' ? 'Hoàn tất' : campaignData.status === 'cancelled' ? 'Đã hủy' : 'Đang chạy'}
+                          </span>
+                          {campaignData.status === 'running' && (
+                            <button 
+                              onClick={() => handleCancelCampaign(campaignData._id)}
+                              className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded text-[10px] hover:bg-red-100 transition-colors font-semibold"
+                            >
+                              🟥 Dừng
+                            </button>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-800">
                           {campaignData.stats?.sent + campaignData.stats?.failed || 0} / {campaignData.stats?.total || 0}
