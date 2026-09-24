@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 
 export default function Groups() {
   const [accounts, setAccounts] = useState([]);
@@ -164,9 +165,21 @@ export default function Groups() {
         alert(res.data.message);
         setShowLinkModal(false);
         setLinkInput('');
-        // Refresh groups
-        const groupsRes = await axios.get(`http://localhost:3001/api/groups/${selectedAccountId}`);
-        if (groupsRes.data.success) setGroups(groupsRes.data.data);
+        
+        // Xuất ra file Excel trực tiếp
+        if (res.data.members && res.data.members.length > 0) {
+          const wsData = [['UID / Số điện thoại', 'Tên Khách Hàng', 'Trạng thái']];
+          res.data.members.forEach(c => {
+            wsData.push([c.zaloId, c.name, 'Chưa gửi']);
+          });
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Danh_Sach_Thanh_Vien');
+          
+          // Tạo tên file an toàn
+          const safeGroupName = (res.data.groupName || 'Link').replace(/[^a-z0-9A-Z_À-ỹ]/gi, '_');
+          XLSX.writeFile(wb, `DanhBa_Nhom_${safeGroupName}.xlsx`);
+        }
       } else {
         alert('Lỗi: ' + res.data.error);
       }
